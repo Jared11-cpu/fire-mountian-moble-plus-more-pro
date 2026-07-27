@@ -13,6 +13,18 @@ describe('travel backend integration', () => {
     expect(fetcher.mock.calls[0][0]).toBe('/api/ai/parse-request');
   });
 
+  it('retries one transient AI failure before falling back to local parsing', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'temporary upstream failure' }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { city: '宜昌', days: 2, budgetPerPerson: 600, interests: ['拍照', '美食'], dietaryNeeds: [], people: 1, startDate: null, mobility: null, transportPreference: null, hotelPreference: null, departureDeadline: null } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetcher);
+
+    const result = await parseTravelRequestWithAi('我想去宜昌两天一夜，预算600元，喜欢拍照和美食');
+
+    expect(result).toMatchObject({ city: '宜昌', days: 2, budgetPerPerson: 600 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it('forces an explicitly requested AMap place into the personalized route', async () => {
     const request = { ...defaultTripRequest('武汉'), freeText: '武汉两天，必须去武汉长江大桥，喜欢历史和江景', requestedPlaces: ['武汉长江大桥'], interests: ['历史文化'] as const };
     const plan = generateTripPlan(request as never, null);
