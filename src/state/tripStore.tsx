@@ -422,7 +422,10 @@ function mergeAiTravelRequest(local: ReturnType<typeof parseTravelRequest>, ai: 
   const request = { ...local.request, freeText: text };
   const tags = [...local.tags];
   const warnings = [...local.warnings];
-  if (ai.city && CITY_NAMES.includes(ai.city as CityName)) {
+  const locallyDetectedCity = local.tags.find((tag) => tag.type === '城市' && CITY_NAMES.includes(tag.value as CityName))?.value as CityName | undefined;
+  if (locallyDetectedCity) {
+    if (ai.city && ai.city !== locallyDetectedCity) warnings.push(`AI 返回城市“${ai.city}”与原文识别的“${locallyDetectedCity}”不一致，已按原文保留。`);
+  } else if (ai.city && CITY_NAMES.includes(ai.city as CityName)) {
     Object.assign(request, updateDestinationCity(request, ai.city as CityName));
     tags.push({ type: '城市', value: ai.city });
   } else if (ai.city) warnings.push(`当前页面暂只支持湖北演示城市，未自动切换到“${ai.city}”。`);
