@@ -20,7 +20,46 @@ export async function extractTravelRequest(userText, env) {
     system: `你是旅游需求结构化提取器。必须只返回合法 JSON，不得编造用户未提供的信息；不确定字段用 null，数组缺省为空数组。requestedPlaces 必须逐项保留用户明确想去、想看、参观、经过或必去的地点名称，不能用泛化兴趣替代；即使存在口语或轻微错别字，也应提取可用于地图检索的核心专名（例如文本提到“三峡”就保留“三峡”）。avoidPlaces 只提取明确要求避开的地点。字段约束：${JSON.stringify(schema)}。`,
     user: text,
   });
-  return validateTravelRequest(result);
+  return mergeDeterministicTravelFacts(validateTravelRequest(result), text);
+}
+
+function mergeDeterministicTravelFacts(ai, text) {
+  const supportedCities = ['宜昌', '武汉', '恩施', '荆州', '襄阳', '黄石'];
+  const explicitCity = supportedCities.find((city) => text.includes(city)) || null;
+  const dayMatch = text.match(/([一二两三四五六七八九十\d]+)天(?:[一二两三四五六七八九十\d]+夜)?/) ?? text.match(/([一二两三四五六七八九十\d]+)日游/);
+  const budgetMatch = text.match(/(?:预算|人均)\s*(\d{2,7})(?:\s*(?:元|块))?/) ?? text.match(/(\d{2,7})\s*块/);
+  const interestLexicon = [
+    ['自然风光', ['自然风光', '峡谷', '山水', '云海', '徒步']],
+    ['拍照', ['拍照', '摄影', '旅拍', '出片']],
+    ['美食', ['美食', '小吃', '餐厅', '咖啡', '好吃']],
+    ['历史文化', ['历史文化', '历史', '博物馆', '古城', '文化']],
+    ['Citywalk', ['Citywalk', 'citywalk', '城市漫步']],
+  ];
+  const deterministicInterests = interestLexicon.filter(([, words]) => words.some((word) => text.includes(word))).map(([interest]) => interest);
+  const dietaryNeeds = [
+    ...ai.dietaryNeeds,
+    ...(/不吃辣|不要辣|忌辣/u.test(text) ? ['不吃辣'] : []),
+    ...(/素食|吃素/u.test(text) ? ['素食'] : []),
+  ];
+  return {
+    ...ai,
+    city: explicitCity || ai.city,
+    days: dayMatch ? Math.min(60, Math.max(1, chineseNumber(dayMatch[1]))) : ai.days,
+    budgetPerPerson: budgetMatch ? Number(budgetMatch[1]) : ai.budgetPerPerson,
+    interests: [...new Set([...ai.interests, ...deterministicInterests])],
+    dietaryNeeds: [...new Set(dietaryNeeds)],
+  };
+}
+
+function chineseNumber(value) {
+  if (/^\d+$/.test(value)) return Number(value);
+  const digits = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  if (value === '十') return 10;
+  if (value.includes('十')) {
+    const [tens, ones] = value.split('十');
+    return (digits[tens] || 1) * 10 + (digits[ones] || 0);
+  }
+  return digits[value] || 1;
 }
 
 export async function rankCandidates(input, env) {
