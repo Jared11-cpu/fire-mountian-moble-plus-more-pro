@@ -84,7 +84,7 @@ export function PlannerPage() {
   };
 
   return (
-    <main className={resultMode && plan ? 'px-2 pb-4 pt-28 md:px-4 md:pb-5' : 'planner-editorial'}>
+    <main className={resultMode && plan ? 'planner-result-page px-2 pb-4 pt-28 md:px-4 md:pb-5' : 'planner-editorial'}>
       {(!resultMode || !plan) &&
         <section id="planner-ai-entry" ref={inputRef} className="planner-entry section-pad scroll-mt-24">
           <div className="mx-auto max-w-6xl">
@@ -121,7 +121,7 @@ export function PlannerPage() {
         </section>}
 
       {resultMode && plan && <div className="mx-auto w-full max-w-none"><section ref={resultRef} className="space-y-3 scroll-mt-24">
-            <div className="flex flex-col justify-between gap-3 rounded-[1.25rem] bg-white/75 px-4 py-3 shadow-sm ring-1 ring-ink/5 backdrop-blur md:flex-row md:items-center md:px-5">
+            <div className="planner-result-toolbar flex flex-col justify-between gap-3 rounded-[1.25rem] bg-white/75 px-4 py-3 shadow-sm ring-1 ring-ink/5 backdrop-blur md:flex-row md:items-center md:px-5">
               <h2 className="font-display text-2xl font-black text-ink">{plan.route.title}</h2>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => { if (window.confirm('重置当前方案？真实手账和照片会保留。')) { resetPlan(); setResultMode(false); } }} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-ink shadow-sm"><RotateCcw className="h-4 w-4" />重置方案</button>
