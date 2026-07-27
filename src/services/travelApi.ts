@@ -90,8 +90,21 @@ async function analyzeTrip(plan: TripPlan, request: TripRequest) {
 
 async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]> {
   const interestTerms: Record<string, string> = { 自然风光: '景区', 历史文化: '博物馆', 拍照: '城市地标', Citywalk: '历史街区', 美食: '特色街区' };
+  const cityAnchors: Record<string, string[]> = {
+    宜昌: ['三峡大坝旅游区', '清江画廊旅游度假区', '滨江公园'],
+    武汉: ['黄鹤楼', '湖北省博物馆', '东湖生态旅游风景区'],
+    恩施: ['恩施大峡谷', '恩施土司城', '恩施女儿城'],
+    荆州: ['荆州博物馆', '荆州古城', '荆州方特东方神画'],
+    襄阳: ['古隆中', '襄阳古城', '中国唐城'],
+    黄石: ['黄石国家矿山公园', '磁湖风景区', '东方山风景区'],
+  };
   const required = request.requestedPlaces.slice(0, 6);
-  const queryTerms = [...new Set([...required, ...request.interests.map((item) => interestTerms[item]).filter(Boolean), '热门景点'])].slice(0, 7);
+  const queryTerms = [...new Set([
+    ...required,
+    ...(cityAnchors[request.destinationCity] ?? []),
+    ...request.interests.map((item) => interestTerms[item]).filter(Boolean),
+    '热门景点',
+  ])].slice(0, 9);
   const searches = await Promise.allSettled(queryTerms.map(async (query) => {
     const params = new URLSearchParams({ city: request.destinationCity, keywords: query, pageSize: '10' });
     if (required.includes(query)) params.set('allTypes', '1');
@@ -103,7 +116,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   const candidates = [...new Map(rows.filter(validPoi).map((item) => [String(item.id), item])).values()]
     .filter((item) => !request.avoidPlaces.some((name) => String(item.name).includes(name)))
     .filter((item) => isRequiredCandidate(item, required) || isWithinDestinationArea(item, request.destinationCity))
-    .filter((item) => isRequiredCandidate(item, required) || !isLowValueUnphotographedPoi(item))
+    .filter((item) => isRequiredCandidate(item, required) || !isLowValuePoi(item))
     .sort((left, right) => Number(hasPoiPhoto(right)) - Number(hasPoiPhoto(left)))
     .slice(0, 50);
   if (!candidates.length) return [];
@@ -150,9 +163,8 @@ function hasPoiPhoto(item: Record<string, any>) {
   return Array.isArray(item.photos) && item.photos.some((value) => typeof value === 'string' && value.trim());
 }
 
-function isLowValueUnphotographedPoi(item: Record<string, any>) {
-  if (hasPoiPhoto(item)) return false;
-  return /(?:党建|法治|廉政|休闲|文化|健身)广场$|停车场|游客集散点/u.test(String(item.name));
+function isLowValuePoi(item: Record<string, any>) {
+  return /(?:文化|党建|法治|廉政|清廉|禁毒|休闲|健身|远教)广场|社区(?:文化)?广场|村(?:级)?文化广场|村委会|管理办公室|停车场|游客集散点/u.test(String(item.name));
 }
 
 const destinationCenters: Record<string, { lng: number; lat: number; maxDistanceKm: number }> = {
