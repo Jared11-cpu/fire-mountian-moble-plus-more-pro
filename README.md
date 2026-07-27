@@ -138,6 +138,8 @@ Sites 服务端已保持现有前端页面和 `/api/transit/plan` 契约不变�
 
 Sites 运行时需要配置 `AMAP_WEB_SERVICE_KEY` 和 `DASHSCOPE_API_KEY`。可选配置 `AI_BASE_URL`、`AI_EXTRACT_MODEL`、`AI_RECOMMEND_MODEL`、`DASHSCOPE_WORKSPACE_ID` 与 `ALLOWED_ORIGINS`。这些服务端密钥不能使用 `VITE_` 前缀。
 
+武汉首页使用 3 张经过宽屏适配筛选的本地高清城市影像，并通过 `GET /api/showcase/wuhan` 在每次进入武汉画面时选择一张。默认由后端随机返回；如需固定主视觉，可在 Sites 运行时设置 `WUHAN_HERO_IMAGE`。可选值：`river-bridge-night`、`river-skyline`、`lakes-skyline`。接口不可用时，前端仍会从同一图库随机选择，不影响首页交互。
+
 餐厅/店铺推荐的可靠流程是：先调用高德搜索取得真实 POI，再把候选列表传入 `/api/ai/recommend` 排序。营业时间、人均消费和评分可能缺失或变化，接口会保留数据来源与查询时间，最终下单前仍需以商家公告为准。
 
 交通面板在页面打开期间每 90 秒静默刷新一次动态路线，不改变现有页面布局；手动刷新仍然保留。只有运营方授权数据源才能把状态升级为车辆级实时定位。

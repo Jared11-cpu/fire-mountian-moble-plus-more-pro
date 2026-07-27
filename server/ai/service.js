@@ -25,6 +25,10 @@ export async function customAnalysis(input, env) {
   return provider(env).customAnalysis(input, env);
 }
 
+export async function scheduleItinerary(input, env) {
+  return provider(env).scheduleItinerary(input, env);
+}
+
 function provider(env) {
   const name = aiProvider(env);
   if (name === 'qwen') return qwen;

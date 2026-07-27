@@ -88,6 +88,24 @@ function validateTravelRequest(value) {
   };
 }
 
+export async function scheduleItinerary(input, env) {
+  if (!Array.isArray(input.points) || input.points.length < 1 || input.points.length > 50) throw httpError(400, 'points 必须包含 1-50 个行程点');
+  const points = input.points.map((point, index) => ({
+    id: assertText(point.id, `第 ${index + 1} 个点位 id`, { max: 200 }),
+    name: assertText(point.name, `第 ${index + 1} 个点位名称`, { max: 200 }),
+    day: Math.max(1, Math.min(15, Math.round(Number(point.day) || 1))),
+    stayMinutes: Math.max(10, Math.min(480, Math.round(Number(point.stayMinutes) || 60))),
+    travelMinutesToNext: Math.max(0, Math.min(720, Math.round(Number(point.travelMinutesToNext) || 0))),
+    openingHours: nullableString(point.openingHours),
+  }));
+  const result = await qwenJson(env, {
+    model: env.AI_RECOMMEND_MODEL || 'qwen-plus', temperature: 0.1,
+    system: '你是湖北旅行安全排程助手。必须只返回 JSON：{"departureTime":"HH:mm","items":[{"id":"原始id","day":1,"arrivalTime":"HH:mm","reason":"简短理由"}],"safetyNotes":[]}。只能使用输入 points 中的 id、day、停留时长、交通时长和已提供的 openingHours，不得编造营业时间或路线。每天必须独立排程，所有到达时间必须在 07:30-21:30，严禁 22:00-次日07:29 的夜间赶路；同一天必须严格按输入顺序递增，并为上一站停留和交通预留足够时间。老人、儿童或行动不便应优先安排更早结束。必须为每个输入点返回且只返回一项。',
+    user: JSON.stringify({ city: input.city || '', days: input.days || 1, travelerType: input.travelerType || '', specialNeeds: input.specialNeeds || [], preferredDepartureTime: input.departureTime || '08:30', points }),
+  });
+  return validateSchedule(result, points);
+}
+
 function sanitizeCandidate(item, index) {
   if (!item || typeof item !== 'object') throw httpError(400, `第 ${index + 1} 个候选地点无效`);
   const id = assertText(item.id, '候选地点 id', { max: 200 });
@@ -105,6 +123,40 @@ function validateRanking(value, ids) {
   });
   return { status: value.status, ranked, warnings: stringArray(value.warnings, 20) };
 }
+
+function validateSchedule(value, points) {
+  const departureTime = safeTime(value?.departureTime, 'AI 建议出发时间', 7 * 60 + 15, 10 * 60 + 30);
+  if (!Array.isArray(value?.items) || value.items.length !== points.length) throw httpError(502, 'AI 排程没有覆盖全部行程点');
+  const pointById = new Map(points.map((point) => [point.id, point]));
+  const seen = new Set();
+  const items = value.items.map((item) => {
+    const id = String(item?.id || '');
+    const point = pointById.get(id);
+    if (!point || seen.has(id) || Number(item.day) !== point.day) throw httpError(502, 'AI 排程引用了无效点位或日期');
+    seen.add(id);
+    return { id, day: point.day, arrivalTime: safeTime(item.arrivalTime, `${point.name}到达时间`, 7 * 60 + 30, 21 * 60 + 30), reason: assertText(item.reason || '结合安全时段、停留与交通耗时安排。', '排程理由', { max: 300 }) };
+  });
+  const byId = new Map(items.map((item) => [item.id, item]));
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    const current = byId.get(point.id);
+    const nextPoint = points[index + 1];
+    const next = nextPoint ? byId.get(nextPoint.id) : undefined;
+    if (!current || !next || nextPoint.day !== point.day) continue;
+    const required = timeMinutes(current.arrivalTime) + point.stayMinutes + point.travelMinutesToNext;
+    if (timeMinutes(next.arrivalTime) < required) throw httpError(502, 'AI 排程未预留足够的停留或交通时间');
+  }
+  return { departureTime, items: points.map((point) => byId.get(point.id)), safetyNotes: stringArray(value.safetyNotes, 10) };
+}
+
+function safeTime(value, label, min, max) {
+  const text = String(value || '').trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text)) throw httpError(502, `${label}格式无效`);
+  const minutes = timeMinutes(text);
+  if (minutes < min || minutes > max) throw httpError(502, `${label}超出安全时段`);
+  return text;
+}
+function timeMinutes(value) { const [hour, minute] = value.split(':').map(Number); return hour * 60 + minute; }
 
 function copyFacts(value, depth = 0) {
   if (depth > 5 || value === null || value === undefined) return value ?? null;

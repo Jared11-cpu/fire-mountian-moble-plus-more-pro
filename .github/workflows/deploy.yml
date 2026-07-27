@@ -41,6 +41,7 @@ jobs:
 
       - name: Build static site
         env:
+          VITE_BASE_PATH: /fianlly-max-pro-ready-me-fire-mountian-cup-V3/
           VITE_AMAP_ENABLED: ${{ vars.VITE_AMAP_ENABLED || 'true' }}
           VITE_AMAP_KEY: ${{ secrets.VITE_AMAP_KEY }}
           VITE_AMAP_SECURITY_CODE: ${{ secrets.VITE_AMAP_SECURITY_CODE }}

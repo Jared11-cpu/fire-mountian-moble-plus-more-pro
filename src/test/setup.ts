@@ -16,4 +16,16 @@ class ResizeObserverMock {
   disconnect() {}
 }
 Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverMock });
+class IntersectionObserverMock {
+  constructor(private callback: IntersectionObserverCallback) {}
+  observe(target: Element) { this.callback([{ isIntersecting: true, boundingClientRect: { bottom: 800 } } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+  unobserve() {}
+  disconnect() {}
+  root = null;
+  rootMargin = '0px';
+  thresholds = [0];
+  takeRecords() { return []; }
+}
+Object.defineProperty(window, 'IntersectionObserver', { value: IntersectionObserverMock, writable: true });
 Object.defineProperty(window, 'scrollTo', { value: () => undefined, writable: true });
+Object.defineProperty(Element.prototype, 'scrollIntoView', { value: () => undefined, writable: true });

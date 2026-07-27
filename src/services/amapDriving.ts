@@ -24,6 +24,7 @@ export type DrivingSearchFailure = {
 
 export type DrivingPlanResult = {
   path: [number, number][];
+  paths: Array<Array<[number, number]>>;
   distanceMeters: number;
   durationSeconds: number;
   drivingInstances: any[];
@@ -32,6 +33,7 @@ export type DrivingPlanResult = {
 export async function planBackendDrivingRoute(points: RoutePoint[]): Promise<DrivingPlanResult> {
   if (points.length < 2) throw { status: 'no_data', result: 'Route needs at least two points' } satisfies DrivingSearchFailure;
   const mergedPath: [number, number][] = [];
+  const roadPaths: Array<Array<[number, number]>> = [];
   let distanceMeters = 0;
   let durationSeconds = 0;
 
@@ -51,15 +53,38 @@ export async function planBackendDrivingRoute(points: RoutePoint[]): Promise<Dri
       throw { status: String(response.status), result: payload, error: payload?.error || `道路接口请求失败 (${response.status})` } satisfies DrivingSearchFailure;
     }
     const path = payload?.paths?.[0];
-    if (!Array.isArray(path?.polyline) || path.polyline.length < 2) {
+    const exactRoadPaths = normalizeBackendRoadPaths(path);
+    if (!exactRoadPaths.length) {
       throw { status: 'no_data', result: payload, error: 'Route API contains no usable path' } satisfies DrivingSearchFailure;
     }
-    appendUniquePath(mergedPath, path.polyline.map(([lng, lat]: [number, number]) => [Number(lng), Number(lat)]));
+    roadPaths.push(...exactRoadPaths);
+    exactRoadPaths.forEach((roadPath) => appendUniquePath(mergedPath, roadPath));
     distanceMeters += Number(path.distanceKm || 0) * 1000;
     durationSeconds += Number(path.durationMinutes || 0) * 60;
   }
 
-  return { path: mergedPath, distanceMeters, durationSeconds, drivingInstances: [] };
+  return { path: mergedPath, paths: roadPaths, distanceMeters, durationSeconds, drivingInstances: [] };
+}
+
+function normalizeBackendRoadPaths(path: any): Array<Array<[number, number]>> {
+  const candidates = Array.isArray(path?.polylines) && path.polylines.length ? path.polylines : [path?.polyline];
+  return coalesceConnectedRoadPaths(candidates
+    .filter(Array.isArray)
+    .map((line: Array<[number, number]>) => line.map(([lng, lat]) => [Number(lng), Number(lat)] as [number, number]).filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat)))
+    .filter((line: Array<[number, number]>) => line.length > 1));
+}
+
+export function coalesceConnectedRoadPaths(paths: Array<Array<[number, number]>>) {
+  const result: Array<Array<[number, number]>> = [];
+  for (const path of paths) {
+    if (path.length < 2) continue;
+    const previous = result[result.length - 1];
+    const previousEnd = previous?.[previous.length - 1];
+    const nextStart = path[0];
+    if (previousEnd && previousEnd[0] === nextStart[0] && previousEnd[1] === nextStart[1]) previous.push(...path.slice(1));
+    else result.push([...path]);
+  }
+  return result;
 }
 
 function backendRoutePoint(point: RoutePoint) {
@@ -145,6 +170,7 @@ export async function planAmapDrivingRoute(AMap: any, points: RoutePoint[]): Pro
 
   const drivingInstances: any[] = [];
   const mergedPath: [number, number][] = [];
+  const roadPaths: Array<Array<[number, number]>> = [];
   let distanceMeters = 0;
   let durationSeconds = 0;
 
@@ -158,11 +184,12 @@ export async function planAmapDrivingRoute(AMap: any, points: RoutePoint[]): Pro
       });
       drivingInstances.push(driving);
       const route = await searchDrivingSegment(driving, segment);
-      const segmentPath = extractDrivingPath(route);
-      if (segmentPath.length < 2) {
+      const segmentPaths = coalesceConnectedRoadPaths(extractDrivingPaths(route));
+      if (!segmentPaths.length) {
         throw { status: 'no_data', result: route, error: 'Driving route contains no usable path' } satisfies DrivingSearchFailure;
       }
-      appendUniquePath(mergedPath, segmentPath);
+      roadPaths.push(...segmentPaths);
+      segmentPaths.forEach((segmentPath) => appendUniquePath(mergedPath, segmentPath));
       distanceMeters += Number(route.distance) || 0;
       durationSeconds += Number(route.time) || 0;
     }
@@ -171,7 +198,7 @@ export async function planAmapDrivingRoute(AMap: any, points: RoutePoint[]): Pro
     throw error;
   }
 
-  return { path: mergedPath, distanceMeters, durationSeconds, drivingInstances };
+  return { path: mergedPath, paths: roadPaths, distanceMeters, durationSeconds, drivingInstances };
 }
 
 function searchDrivingSegment(driving: any, coordinates: Array<[number, number]>) {
@@ -224,15 +251,23 @@ export function convertGpsPoint(AMap: any, point: RoutePoint, timeoutMs = AMAP_T
 
 export function extractDrivingPath(route: any) {
   const path: Array<[number, number]> = [];
+  extractDrivingPaths(route).forEach((segment) => appendUniquePath(path, segment));
+  return path;
+}
+
+export function extractDrivingPaths(route: any) {
+  const paths: Array<Array<[number, number]>> = [];
   for (const step of route?.steps ?? []) {
+    const path: Array<[number, number]> = [];
     for (const point of step?.path ?? []) {
       const lng = typeof point?.getLng === 'function' ? point.getLng() : Number(point?.lng ?? point?.[0]);
       const lat = typeof point?.getLat === 'function' ? point.getLat() : Number(point?.lat ?? point?.[1]);
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
       appendUniquePath(path, [[lng, lat]]);
     }
+    if (path.length > 1) paths.push(path);
   }
-  return path;
+  return paths;
 }
 
 function appendUniquePath(target: Array<[number, number]>, source: Array<[number, number]>) {

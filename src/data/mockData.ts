@@ -48,6 +48,11 @@ export const navItems = [
   { id: 'home', label: '首页' },
   { id: 'planner', label: 'AI 行程' },
   { id: 'journal', label: '旅行手账' },
+] as const;
+
+export const moreNavItems = [
+  { id: 'business', label: '商家后台' },
+  { id: 'dashboard', label: '数据看板' },
   { id: 'pitch', label: '项目介绍' },
 ] as const;
 

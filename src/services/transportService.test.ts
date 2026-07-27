@@ -13,7 +13,7 @@ describe('transportService', () => {
     const result = await resolveTransportPlan(requestFixture(), { endpoint: '' });
     expect(result.source).toBe('rules-v1');
     expect(result.isRealtime).toBe(false);
-    expect(result.segments).toHaveLength(5);
+    expect(result.segments).toHaveLength(4);
     expect(result.segments.every((segment) => segment.arrivalTime > segment.departureTime)).toBe(true);
     expect(result.notices[0]).toContain('未取得可用的高德公交结果');
     expect(result.segments.every((segment) => segment.legs.length === 1)).toBe(true);
@@ -58,7 +58,7 @@ describe('transportService', () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ paths: [{ durationMinutes: 18, distanceKm: 9.4, tolls: 0, taxiCost: 28, polyline: [[111.1, 30.1], [111.2, 30.2]], steps: [{ instruction: '沿东山大道向西行驶', road: '东山大道' }] }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch;
     const result = await resolveDrivingTransportPlan(requestFixture(), { endpoint: 'https://example.test/route', fetcher });
     expect(result.sourceLabel).toBe('高德动态驾车规划');
-    expect(result.segments).toHaveLength(5);
+    expect(result.segments).toHaveLength(4);
     expect(result.segments.every((segment) => segment.mode === '驾车')).toBe(true);
     expect(result.segments[0].instruction).toContain('沿东山大道');
     expect(result.segments[0].costEstimate).toBe('打车约 ¥28 · 无过路费');

@@ -4,6 +4,13 @@ import worker from '../../server/index.js';
 afterEach(() => vi.restoreAllMocks());
 
 describe('Sites API router', () => {
+  it('武汉首页图片支持后端指定，并公开可用素材列表', async () => {
+    const response = await worker.fetch(new Request('https://example.test/api/showcase/wuhan'), { WUHAN_HERO_IMAGE: 'river-skyline' });
+    const payload = await response.json();
+    expect(payload).toMatchObject({ imageId: 'river-skyline', selection: 'configured' });
+    expect(payload.availableImageIds).toContain('river-bridge-night');
+  });
+
   it('reports configured capability without exposing secrets', async () => {
     const response = await worker.fetch(new Request('https://example.test/api/health'), { AMAP_WEB_SERVICE_KEY: 'secret', DASHSCOPE_API_KEY: 'secret' });
     expect(response.status).toBe(200);
@@ -51,6 +58,17 @@ describe('Sites API router', () => {
     expect(fetcher.mock.calls[1][0]).toContain('/v3/geocode/regeo?');
   });
 
+  it('forward geocodes a user-entered starting place without constraining it to the destination city', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: '1', geocodes: [{ formatted_address: '北京市朝阳区建国路88号', province: '北京市', city: '北京市', district: '朝阳区', adcode: '110105', location: '116.457000,39.908000' }] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetcher);
+
+    const response = await worker.fetch(new Request('https://example.test/api/location/geocode?address=北京建国路88号'), { AMAP_WEB_SERVICE_KEY: 'test' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ formattedAddress: '北京市朝阳区建国路88号', location: { lng: 116.457, lat: 39.908 }, coordinateSystem: 'gcj02' });
+    expect(fetcher.mock.calls[0][0]).toContain('/v3/geocode/geo?');
+    expect(fetcher.mock.calls[0][0]).not.toContain('city=');
+  });
+
   it('rejects an AI recommendation that invents a candidate id', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ status: 'ok', ranked: [{ id: 'invented', reason: '虚构', fitScore: 99 }], warnings: [] }) } }] }), { status: 200 })));
     const response = await worker.fetch(new Request('https://example.test/api/ai/recommend', { method: 'POST', body: JSON.stringify({ candidates: [{ id: 'real-poi', name: '真实地点' }] }) }), { DASHSCOPE_API_KEY: 'test' });
@@ -81,6 +99,22 @@ describe('Sites API router', () => {
     expect(fetcher.mock.calls[1][0]).toContain('city2=0731');
   });
 
+  it('accepts only complete daytime AI schedules with enough travel time', async () => {
+    const valid = { departureTime: '07:45', items: [{ id: 'start', day: 1, arrivalTime: '08:00', reason: '安全抵达起点' }, { id: 'museum', day: 1, arrivalTime: '10:00', reason: '上午参观' }], safetyNotes: ['21:30 前结束'] };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 })));
+    const request = () => new Request('https://example.test/api/ai/schedule', { method: 'POST', body: JSON.stringify({ city: '武汉', days: 1, points: [{ id: 'start', name: '武汉站', day: 1, stayMinutes: 30, travelMinutesToNext: 60 }, { id: 'museum', name: '湖北省博物馆', day: 1, stayMinutes: 90, travelMinutesToNext: 0 }] }) });
+
+    const response = await worker.fetch(request(), { DASHSCOPE_API_KEY: 'test' });
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toMatchObject({ departureTime: '07:45', safetyNotes: ['21:30 前结束'] });
+
+    const unsafe = { ...valid, items: valid.items.map((item, index) => index === 1 ? { ...item, arrivalTime: '00:20' } : item) };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(unsafe) } }] }), { status: 200 })));
+    const rejected = await worker.fetch(request(), { DASHSCOPE_API_KEY: 'test' });
+    expect(rejected.status).toBe(502);
+    expect((await rejected.json()).error).toContain('安全时段');
+  });
+
   it('searches explicit required places across all AMap POI types', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: '1', count: '1', pois: [{ id: 'bridge', name: '武汉长江大桥', type: '地名地址信息', location: '114.288,30.550' }] }), { status: 200 }));
     vi.stubGlobal('fetch', fetcher);
@@ -109,7 +143,7 @@ describe('Sites API router', () => {
       body: JSON.stringify({ mode: 'driving', origin: { lng: 114, lat: 30, coordinateSystem: 'wgs84' }, destination: { lng: 114.2, lat: 30.2 } }),
     }), { AMAP_WEB_SERVICE_KEY: 'test' });
     expect(response.status).toBe(200);
-    expect((await response.json()).paths[0]).toMatchObject({ distanceKm: 1.2, durationMinutes: 5, taxiCost: 18, steps: [{ instruction: '沿东山大道行驶', road: '东山大道' }] });
+    expect((await response.json()).paths[0]).toMatchObject({ distanceKm: 1.2, durationMinutes: 5, taxiCost: 18, coordinateSystem: 'gcj02', geometrySource: 'amap-directions-v5', polylines: [[[114.006, 30.006], [114.2, 30.2]]], steps: [{ instruction: '沿东山大道行驶', road: '东山大道' }] });
     expect(fetcher.mock.calls[0][0]).toContain('/v3/assistant/coordinate/convert?');
     expect(fetcher.mock.calls[1][0]).toContain('origin=114.006000%2C30.006000');
   });

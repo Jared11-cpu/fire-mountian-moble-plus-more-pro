@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCompletedJournalEntries, buildJournalGuideCards, buildJournalMapRoute, buildJournalPosterSvg, getJournalAmapUrl, getJournalXiaohongshuUrl, layoutJournalPosterPoints } from './JournalPage';
+import { buildCompletedJournalEntries, buildJournalCommunityHighlights, buildJournalGuideCards, buildJournalMapRoute, buildJournalPosterSvg, getJournalAmapUrl, getJournalXiaohongshuUrl, layoutJournalPosterPoints } from './JournalPage';
 import type { JournalEntry } from '../types/route';
 import { defaultTripRequest, generateTripPlan } from '../domain/trip';
 
@@ -72,5 +72,20 @@ describe('journal handwritten route poster', () => {
     expect(xiaohongshu.searchParams.get('keyword')).toBe(`${point.city} ${point.name} 游玩攻略`);
     expect(amap.searchParams.get('position')).toBe(`${point.lng},${point.lat}`);
     expect(buildJournalGuideCards(point).map((card) => card.text)).toEqual([point.reason, point.photoTip, point.recordTip]);
+  });
+
+  it('builds three point-specific high-engagement community summaries with focused source links', () => {
+    const point = generateTripPlan(defaultTripRequest('武汉')).route.points.find((item) => item.type === 'scenic')!;
+    const highlights = buildJournalCommunityHighlights(point);
+
+    expect(highlights).toHaveLength(3);
+    expect(highlights[0].summary).toContain(point.name);
+    expect(highlights.map((item) => item.topic)).toEqual(['最佳机位', '错峰体验', '现场提醒']);
+    for (const item of highlights) {
+      const url = new URL(item.url);
+      expect(url.hostname).toBe('www.xiaohongshu.com');
+      expect(url.searchParams.get('keyword')).toContain(`${point.city} ${point.name}`);
+      expect(url.searchParams.get('keyword')).toContain(item.topic);
+    }
   });
 });

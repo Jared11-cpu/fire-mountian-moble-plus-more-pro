@@ -12,7 +12,8 @@ const amapMocks = vi.hoisted(() => {
   };
   const Map = vi.fn(function Map(_container: unknown, _options: Record<string, unknown>) { return mapInstance; });
   const planBackendDrivingRoute = vi.fn();
-  return { mapInstance, Map, planBackendDrivingRoute };
+  const planAmapDrivingRoute = vi.fn();
+  return { mapInstance, Map, planAmapDrivingRoute, planBackendDrivingRoute };
 });
 
 vi.mock('../services/amapDriving', () => ({
@@ -29,6 +30,7 @@ vi.mock('../services/amapDriving', () => ({
     window.AMap = AMap;
     return AMap;
   }),
+  planAmapDrivingRoute: amapMocks.planAmapDrivingRoute,
   planBackendDrivingRoute: amapMocks.planBackendDrivingRoute,
   resetAmapJsApiLoader: vi.fn(),
 }));
@@ -40,6 +42,7 @@ describe('RouteMap lifecycle', () => {
     vi.stubEnv('VITE_AMAP_SECURITY_CODE', 'test-security-code');
     amapMocks.Map.mockClear();
     amapMocks.planBackendDrivingRoute.mockReset().mockResolvedValue({ path: [[114.3, 30.5], [114.31, 30.51]], distanceMeters: 1600, durationSeconds: 600 });
+    amapMocks.planAmapDrivingRoute.mockReset().mockResolvedValue({ path: [[114.3, 30.5], [114.305, 30.507], [114.31, 30.51]], distanceMeters: 1700, durationSeconds: 660, drivingInstances: [] });
     Object.values(amapMocks.mapInstance).forEach((value) => typeof value === 'function' && value.mockClear());
   });
 
@@ -48,9 +51,9 @@ describe('RouteMap lifecycle', () => {
     const common = { selectedPointId: route.points[0].id, activePointIndex: 0, navigating: false, mapOnly: true } as const;
     const view = render(<RouteMap route={route} {...common} onSelectPoint={() => undefined} />);
     await waitFor(() => expect(amapMocks.Map).toHaveBeenCalledTimes(1));
-    expect(amapMocks.Map.mock.calls[0][1]).toMatchObject({ dragEnable: true, zoomEnable: true, scrollWheel: true, touchZoom: true, doubleClickZoom: true, keyboardEnable: true });
-    fireEvent.wheel(view.getByRole('application', { name: '可缩放和拖动的高德交互地图' }), { deltaY: -120 });
-    expect(amapMocks.mapInstance.zoomIn).toHaveBeenCalled();
+    expect(amapMocks.Map.mock.calls[0][1]).toMatchObject({ dragEnable: true, zoomEnable: true, scrollWheel: true, touchZoom: true, touchZoomCenter: 1, doubleClickZoom: true, keyboardEnable: true });
+    expect(amapMocks.mapInstance.on).toHaveBeenCalledWith('zoomend', expect.any(Function));
+    expect(amapMocks.mapInstance.on).not.toHaveBeenCalledWith('zoomchange', expect.any(Function));
 
     const transportPlan = {
       source: 'transport-api', freshness: 'live-query', sourceLabel: '高德动态公交规划', generatedAt: new Date().toISOString(),
@@ -95,5 +98,27 @@ describe('RouteMap lifecycle', () => {
     await waitFor(() => expect(view.queryByRole('alert')).not.toBeInTheDocument());
     expect(amapMocks.Map).toHaveBeenCalledTimes(1);
     expect(amapMocks.mapInstance.destroy).not.toHaveBeenCalled();
+  });
+
+  it('uses browser-side AMap driving when the backend route endpoint is unavailable', async () => {
+    amapMocks.planBackendDrivingRoute.mockRejectedValueOnce(new Error('backend unavailable'));
+    const route = { ...baseRoutes.武汉, startPoint: baseRoutes.武汉.points[0] };
+    const view = render(<RouteMap route={route} selectedPointId={route.points[0].id} activePointIndex={0} navigating={false} mapOnly onSelectPoint={() => undefined} />);
+
+    await waitFor(() => expect(amapMocks.planAmapDrivingRoute).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(amapMocks.Map).toHaveBeenCalledTimes(1));
+    expect(view.queryByRole('alert')).not.toBeInTheDocument();
+    expect(amapMocks.mapInstance.add).toHaveBeenCalled();
+  });
+
+  it('never exposes a point-only map when both real route planners fail', async () => {
+    amapMocks.planBackendDrivingRoute.mockRejectedValueOnce(new Error('backend unavailable'));
+    amapMocks.planAmapDrivingRoute.mockRejectedValueOnce(new Error('browser driving unavailable'));
+    const route = { ...baseRoutes.武汉, startPoint: baseRoutes.武汉.points[0] };
+    const view = render(<RouteMap route={route} selectedPointId={route.points[0].id} activePointIndex={0} navigating={false} mapOnly onSelectPoint={() => undefined} />);
+
+    expect(await view.findByRole('alert')).toHaveTextContent('当前不展示只有点或点到点直线的半成品');
+    expect(amapMocks.Map).not.toHaveBeenCalled();
+    expect(view.queryByRole('application', { name: '可缩放和拖动的高德路线地图' })).not.toBeInTheDocument();
   });
 });

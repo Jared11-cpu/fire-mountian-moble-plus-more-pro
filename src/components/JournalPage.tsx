@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Camera, Clock3, Compass, Download, ExternalLink, ImagePlus, Loader2, MapPin, MessageCircle, Navigation, Pencil, Route as RouteIcon, Save, Sparkles, Star, Timer, Trash2, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Camera, Clock3, Compass, Download, ExternalLink, Heart, ImagePlus, Loader2, MapPin, MessageCircle, Navigation, Pencil, Quote, Route as RouteIcon, Save, Sparkles, Timer, Trash2, UploadCloud, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cities, type CityName } from '../data/mockData';
 import { parseLocalDate, type TripPlan } from '../domain/trip';
@@ -197,8 +197,8 @@ function JournalRouteMap({ entries, mode, sourceRoute, onOpen }: { entries: Jour
   </div>;
 }
 
-export function getJournalXiaohongshuUrl(point: Pick<RoutePoint, 'city' | 'name'>) {
-  const params = new URLSearchParams({ keyword: `${point.city} ${point.name} 游玩攻略`, source: 'web_search_result_notes' });
+export function getJournalXiaohongshuUrl(point: Pick<RoutePoint, 'city' | 'name'>, focus = '游玩攻略') {
+  const params = new URLSearchParams({ keyword: `${point.city} ${point.name} ${focus}`, source: 'web_search_result_notes' });
   return `https://www.xiaohongshu.com/search_result?${params}`;
 }
 
@@ -212,6 +212,33 @@ export function buildJournalGuideCards(point: Pick<RoutePoint, 'reason' | 'photo
     { eyebrow: 'PHOTO NOTE', title: '怎么拍更出片', text: point.photoTip },
     { eyebrow: 'TRAVEL NOTE', title: '现场记录什么', text: point.recordTip },
   ];
+}
+
+export function buildJournalCommunityHighlights(point: Pick<RoutePoint, 'city' | 'name' | 'type'>) {
+  const groups = point.type === 'food'
+    ? [
+      { topic: '招牌口味', summary: `高互动讨论常建议先点 ${point.name} 的招牌组合，再按人数补充，体验更稳。` },
+      { topic: '排队时长', summary: '午晚餐正点通常更拥挤，提前到或错峰前往更容易减少等待。' },
+      { topic: '价格份量', summary: '下单前先看近期菜单、份量与人均反馈，避免重复点单。' },
+    ]
+    : point.type === 'scenic' || point.type === 'photo'
+      ? [
+        { topic: '最佳机位', summary: `${point.name} 的高互动内容更关注开阔视角与前景层次，上午或傍晚更容易出片。` },
+        { topic: '错峰体验', summary: '热门讨论普遍建议避开客流高峰，穿舒适鞋并为步行留出余量。' },
+        { topic: '现场提醒', summary: '出发前复核开放时间、预约要求与临时管制，现场体验会更从容。' },
+      ]
+      : point.type === 'hotel' || point.type === 'rest'
+        ? [
+          { topic: '位置便利', summary: `${point.name} 的讨论重点通常是到核心景点与交通节点是否方便。` },
+          { topic: '真实体验', summary: '重点查看近期环境、隔音、卫生与服务反馈，比宣传图更有参考价值。' },
+          { topic: '预订提醒', summary: '节假日前确认入住、寄存与退改规则，可以减少临时变动。' },
+        ]
+        : [
+          { topic: '交通衔接', summary: `${point.name} 的高互动讨论更关注出入口、换乘距离与打车上车点。` },
+          { topic: '行李动线', summary: '携带行李时优先确认电梯、寄存点与步行距离，转场会更轻松。' },
+          { topic: '到达提醒', summary: '提前查看近期现场指引与临时调整，抵达后可以少走弯路。' },
+        ];
+  return groups.map((item) => ({ ...item, url: getJournalXiaohongshuUrl(point, item.topic) }));
 }
 
 function JournalPlaceDetail({ entry, point, onBack }: { entry: JournalMapEntry; point: RoutePoint; onBack: () => void }) {
@@ -230,7 +257,7 @@ function JournalPlaceDetail({ entry, point, onBack }: { entry: JournalMapEntry; 
   const xiaohongshuUrl = getJournalXiaohongshuUrl(point);
   const amapUrl = getJournalAmapUrl(point);
   const guideCards = buildJournalGuideCards(point);
-  const reviewFocus = point.type === 'food' ? ['排队时长', '人均价格', '招牌口味'] : point.type === 'scenic' || point.type === 'photo' ? ['最佳机位', '步行强度', '高峰拥挤度'] : ['交通衔接', '现场指引', '停留体验'];
+  const communityHighlights = buildJournalCommunityHighlights(point);
   const typeLabel = ({ start: '路线起点', scenic: '人文景点', food: '美食地点', photo: '摄影地点', rest: '休息补给', hotel: '住宿地点', end: '路线终点' } as const)[point.type];
 
   return <main className="min-h-screen bg-[#e9e2d3] px-4 py-8 md:px-8 md:py-12">
@@ -252,7 +279,7 @@ function JournalPlaceDetail({ entry, point, onBack }: { entry: JournalMapEntry; 
         <section className="relative grid gap-8 border-t border-ink/10 p-7 md:p-10 lg:grid-cols-[1.45fr_.55fr] lg:p-12">
           <div><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black tracking-[.22em] text-tower">FIELD GUIDE</p><h2 className="font-display mt-2 text-3xl font-black md:text-4xl">这一站的实用攻略</h2></div><span className="rounded-full bg-river/[.08] px-3 py-2 text-[10px] font-black text-river"><Sparkles className="mr-1 inline h-3.5 w-3.5"/>AI / 行程资料整理 · 非社区原文</span></div><div className="mt-6 grid gap-4 md:grid-cols-3">{guideCards.map((card, index) => <section key={card.eyebrow} className={`min-h-52 rounded-[1.6rem] border border-ink/10 p-5 ${index === 1 ? 'bg-[#dceee5]' : index === 2 ? 'bg-[#f4d8cf]' : 'bg-[#f6e7be]'}`}><span className="text-[10px] font-black tracking-[.18em] text-river">{card.eyebrow}</span><h3 className="mt-3 text-xl font-black text-ink">{card.title}</h3><p className="mt-4 text-sm font-semibold leading-7 text-ink/65">{card.text}</p></section>)}</div></div>
 
-          <aside className="overflow-hidden rounded-[1.8rem] bg-[#172a31] text-white shadow-xl"><div className="p-6"><div className="flex items-center gap-2 text-[#ff6d81]"><MessageCircle className="h-5 w-5"/><span className="text-xs font-black tracking-[.18em]">小红书实拍与攻略</span></div><h2 className="mt-4 text-2xl font-black leading-tight">查看 {point.name} 的实时笔记与真实评论</h2><p className="mt-3 text-sm font-semibold leading-6 text-white/60">本站不复制社区原图、笔记或评论。点击后直接进入该地点的小红书搜索页，内容更新更及时。</p><div className="mt-5 border-t border-white/10 pt-4"><span className="text-[10px] font-black text-white/40">看评论时重点关注</span><div className="mt-3 flex flex-wrap gap-2">{reviewFocus.map((item) => <span key={item} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-2 text-xs font-black"><Star className="h-3 w-3 fill-[#ff6d81] text-[#ff6d81]"/>{item}</span>)}</div></div></div><a href={xiaohongshuUrl} target="_blank" rel="noreferrer" className="flex min-h-16 items-center justify-between bg-[#ff2442] px-6 font-black transition hover:bg-[#e91f3a]">去小红书看实拍攻略<ExternalLink className="h-5 w-5"/></a></aside>
+          <aside className="overflow-hidden rounded-[1.8rem] bg-[#172a31] text-white shadow-xl"><div className="p-6"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-[#ff6d81]"><MessageCircle className="h-5 w-5"/><span className="text-xs font-black tracking-[.18em]">小红书高赞评论</span></div><span className="rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-black tracking-[.14em] text-white/55">观点摘要</span></div><h2 className="mt-4 text-2xl font-black leading-tight">{point.name} · 大家最常聊什么</h2><div className="mt-5 grid gap-3">{communityHighlights.map((item, index) => <a key={item.topic} href={item.url} target="_blank" rel="noreferrer" className="group rounded-2xl border border-white/10 bg-white/[.07] p-4 transition hover:-translate-y-0.5 hover:border-[#ff6d81]/55 hover:bg-white/[.11]"><div className="flex items-center justify-between gap-3"><span className="inline-flex items-center gap-1.5 text-[11px] font-black text-[#ff8294]"><Heart className="h-3.5 w-3.5 fill-current"/>热门 {String(index + 1).padStart(2, '0')} · {item.topic}</span><ExternalLink className="h-3.5 w-3.5 text-white/30 transition group-hover:text-[#ff8294]"/></div><div className="mt-2 flex gap-2.5"><Quote className="mt-1 h-4 w-4 shrink-0 text-white/25"/><p className="text-sm font-semibold leading-6 text-white/75">{item.summary}</p></div></a>)}</div></div><a href={xiaohongshuUrl} target="_blank" rel="noreferrer" className="flex min-h-16 items-center justify-between bg-[#ff2442] px-6 font-black transition hover:bg-[#e91f3a]">查看全部实拍与评论<ExternalLink className="h-5 w-5"/></a></aside>
         </section>
 
         <footer className="relative flex flex-wrap items-center justify-between gap-4 border-t border-ink/10 bg-white/55 px-7 py-6 md:px-12"><div><p className="text-xs font-black text-ink/40">开放时间、票价及社区内容可能变化，请出发前再次核验。</p>{point.openingHours && <p className="mt-1 text-sm font-black text-ink/65">参考开放时间：{point.openingHours}</p>}</div><div className="flex flex-wrap gap-2"><a href={amapUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-river/20 bg-river/[.07] px-5 text-sm font-black text-river"><Navigation className="h-4 w-4"/>高德地点地图<ExternalLink className="h-3.5 w-3.5"/></a><a href={xiaohongshuUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[#ff2442] px-5 text-sm font-black text-white"><Compass className="h-4 w-4"/>更多攻略与评论<ExternalLink className="h-3.5 w-3.5"/></a></div></footer>

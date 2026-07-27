@@ -16,6 +16,7 @@ import {
   isIsoDate,
   INTERESTS,
   normalizeRequest,
+  normalizePlanTimeline,
   parseTravelRequest,
   updatePlanDates,
   updateDestinationCity,
@@ -26,7 +27,7 @@ import {
   type TripPlan,
   type TripRequest,
 } from '../domain/trip';
-import { enrichTripPlanWithBackend, parseTravelRequestWithAi, type AiTravelRequest } from '../services/travelApi';
+import { enrichTripPlanWithBackend, parseTravelRequestWithAi, type AiItinerarySchedule, type AiTravelRequest } from '../services/travelApi';
 import type { JournalEntry, RoutePoint } from '../types/route';
 
 const STORAGE_KEY = 'chuyou-app-state-v2';
@@ -96,7 +97,7 @@ function readInitialState(): TripState {
     ? persisted.plan.foodRecommendations?.filter((food) => getSafeDianpingUrl(food.dianpingUrl)) ?? []
     : [];
   const persistedPlan = persisted?.version === 2 && persisted.plan
-    ? { ...persisted.plan, foodRecommendations: storedFoods.length ? storedFoods : buildFoodRecommendations(request) }
+    ? normalizePlanTimeline({ ...persisted.plan, foodRecommendations: storedFoods.length ? storedFoods : buildFoodRecommendations(request) })
     : null;
   return {
     request,
@@ -353,12 +354,47 @@ function applyPersonalizedRoute(plan: TripPlan, recommended: RoutePoint[]): Trip
 
 function applyEnrichment(plan: TripPlan, enrichment: Awaited<ReturnType<typeof enrichTripPlanWithBackend>>): TripPlan {
   const personalized = enrichment.routePoints?.length ? applyPersonalizedRoute(plan, enrichment.routePoints) : plan;
+  const safelyScheduled = enrichment.schedule ? applyAiSchedule(personalized, enrichment.schedule) : personalized;
   return {
-    ...personalized,
+    ...safelyScheduled,
     updatedAt: new Date().toISOString(),
-    content: enrichment.analysis ? { ...personalized.content, summary: enrichment.analysis } : personalized.content,
-    foodRecommendations: enrichment.foods ?? personalized.foodRecommendations,
+    content: enrichment.analysis ? { ...safelyScheduled.content, summary: enrichment.analysis } : safelyScheduled.content,
+    foodRecommendations: enrichment.foods ?? safelyScheduled.foodRecommendations,
   };
+}
+
+function applyAiSchedule(plan: TripPlan, schedule: AiItinerarySchedule): TripPlan {
+  const departureMinutes = safeScheduleMinutes(schedule.departureTime);
+  if (departureMinutes === null || departureMinutes < 7 * 60 + 15 || departureMinutes > 10 * 60 + 30) return plan;
+  const points = plan.route.points as PlannedRoutePoint[];
+  const itemById = new Map(schedule.items.map((item) => [item.id, item]));
+  if (itemById.size !== points.length || points.some((point) => !itemById.has(point.id))) return plan;
+  const scheduled = points.map((point) => {
+    const item = itemById.get(point.id)!;
+    const minutes = safeScheduleMinutes(item.arrivalTime);
+    if (item.day !== (point.day ?? 1) || minutes === null || minutes < 7 * 60 + 30 || minutes > 21 * 60 + 30) return null;
+    return { ...point, time: item.arrivalTime, arrivalTime: item.arrivalTime };
+  });
+  if (scheduled.some((point) => point === null)) return plan;
+  const verified = scheduled as PlannedRoutePoint[];
+  for (let index = 0; index < verified.length - 1; index += 1) {
+    const current = verified[index];
+    const next = verified[index + 1];
+    if ((current.day ?? 1) !== (next.day ?? 1)) continue;
+    const minimumNextArrival = safeScheduleMinutes(current.arrivalTime)! + current.durationMinutes + current.travelMinutesToNext;
+    if (safeScheduleMinutes(next.arrivalTime)! < minimumNextArrival) return plan;
+  }
+  return {
+    ...plan,
+    route: { ...plan.route, points: verified, recommendedStartTime: schedule.departureTime },
+    settings: { ...plan.settings, departureTime: schedule.departureTime },
+  };
+}
+
+function safeScheduleMinutes(value: string) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
 }
 
 function GlobalStatus({ state }: { state: TripState }) {

@@ -22,15 +22,17 @@ describe('travel backend integration', () => {
       if (url.endsWith('/api/ai/recommend')) return new Response(JSON.stringify({ data: { status: 'ok', ranked: [{ id: 'museum', reason: '符合历史偏好', fitScore: 90 }, { id: 'bridge', reason: '用户明确要求', fitScore: 100 }], warnings: [] } }), { status: 200 });
       if (url.endsWith('/api/restaurants/guide')) return new Response(JSON.stringify({ generatedAt: '2026-07-18T10:00:00.000Z', recommendations: [{ id: 'poi-1', name: '蔡林记吉庆街店', verifiedShopName: '蔡林记（吉庆街店）', district: '江汉区', address: '吉庆街', averageCost: 28, category: '热干面', recommendationReason: '早餐顺路且预算匹配', nearestRoutePoint: { name: '武汉长江大桥' }, routeDistanceMeters: 860, location: { lng: 114.3, lat: 30.5 } }] }), { status: 200 });
       if (url.endsWith('/api/ai/analyze')) return new Response(JSON.stringify({ data: { analysis: '路线包含用户指定的武汉长江大桥，并补充历史文化地点。' } }), { status: 200 });
+      if (url.endsWith('/api/ai/schedule')) return new Response(JSON.stringify({ data: { departureTime: '07:45', items: [{ id: plan.route.startPoint.id, day: 1, arrivalTime: '08:00', reason: '安全抵达起点' }, { id: 'amap-bridge', day: 1, arrivalTime: '10:30', reason: '上午游览' }, { id: 'amap-museum', day: 1, arrivalTime: '14:00', reason: '下午参观' }], safetyNotes: ['避免夜间赶路'] } }), { status: 200 });
       return new Response(JSON.stringify({ error: 'unexpected request' }), { status: 500 });
     });
     vi.stubGlobal('fetch', fetcher);
     const result = await enrichTripPlanWithBackend(plan, request as never);
     expect(result.analysis).toContain('武汉长江大桥');
+    expect(result.schedule).toMatchObject({ departureTime: '07:45', safetyNotes: ['避免夜间赶路'] });
     expect(result.routePoints?.[0]).toMatchObject({ name: '武汉长江大桥', lat: 30.55, lng: 114.288, imageUrl: 'https://aos-comment.amap.com/wuhan-bridge.jpg', imageCredit: { author: '高德地图地点相册' } });
     expect(result.routePoints?.[0].reason).toContain('首页明确提出的必经地点');
     expect(result.foods?.[0]).toMatchObject({ id: 'poi-1', name: '蔡林记吉庆街店', priceRange: '约 ¥28/人', dianpingUrl: 'https://www.dianping.com/shop/l3LoOn1gi2ggY01E', dianpingLinkType: 'direct', nearestPointName: '武汉长江大桥', distanceMeters: 860, analysisSource: 'qwen-amap' });
-    expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([expect.stringContaining('/api/attractions/search'), '/api/ai/recommend', '/api/restaurants/guide', '/api/ai/analyze']));
+    expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([expect.stringContaining('/api/attractions/search'), '/api/ai/recommend', '/api/restaurants/guide', '/api/ai/analyze', '/api/ai/schedule']));
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toContain('/api/attractions/search?city=%E6%AD%A6%E6%B1%89&keywords=%E6%AD%A6%E6%B1%89%E9%95%BF%E6%B1%9F%E5%A4%A7%E6%A1%A5&pageSize=10&allTypes=1');
     const restaurantCall = fetcher.mock.calls.find((call) => String(call[0]).endsWith('/api/restaurants/guide')) as unknown as [RequestInfo | URL, RequestInit] | undefined;
     const restaurantBody = JSON.parse(String(restaurantCall?.[1]?.body));
@@ -40,6 +42,10 @@ describe('travel backend integration', () => {
     const recommendCall = fetcher.mock.calls.find((call) => String(call[0]).endsWith('/api/ai/recommend')) as unknown as [RequestInfo | URL, RequestInit] | undefined;
     const recommendBody = JSON.parse(String(recommendCall?.[1]?.body));
     expect(recommendBody.candidates.map((item: { id: string }) => item.id)).not.toContain('square');
+    const scheduleCall = fetcher.mock.calls.find((call) => String(call[0]).endsWith('/api/ai/schedule')) as unknown as [RequestInfo | URL, RequestInit] | undefined;
+    const scheduleBody = JSON.parse(String(scheduleCall?.[1]?.body));
+    expect(scheduleBody).toMatchObject({ city: '武汉', days: 2, travelerType: request.travelerType });
+    expect(scheduleBody.points.every((point: { travelMinutesToNext: number }) => Number.isFinite(point.travelMinutesToNext))).toBe(true);
   });
 
   it('builds a city-scoped Dianping search link for a live AMap restaurant without a verified direct page', () => {

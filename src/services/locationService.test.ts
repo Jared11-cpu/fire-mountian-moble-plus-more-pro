@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getBrowserLocation, reverseBrowserLocation } from './locationService';
+import { getBrowserLocation, resolveManualLocation, reverseBrowserLocation } from './locationService';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -22,5 +22,13 @@ describe('browser location service', () => {
     expect(result).toMatchObject({ status: 'success', lat: 39.9042, lng: 116.4074, city: '武汉' });
     expect(result.name).toContain('北京市');
     expect(result.name).not.toContain('武汉站');
+  });
+
+  it('forward geocodes a custom starting place into real GCJ-02 coordinates', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ formattedAddress: '北京市朝阳区建国路88号', location: { lng: 116.457, lat: 39.908 } }), { status: 200 }));
+    const result = await resolveManualLocation('北京建国路88号', fetcher as typeof fetch);
+
+    expect(result).toEqual({ name: '北京市朝阳区建国路88号', lng: 116.457, lat: 39.908, coordinateSystem: 'gcj02' });
+    expect(fetcher.mock.calls[0][0]).toContain('/api/location/geocode?address=');
   });
 });

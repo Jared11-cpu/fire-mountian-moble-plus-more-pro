@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { classifyDrivingFailure, convertGpsPoint, extractDrivingPath, loadAmapJsApi, planAmapDrivingRoute, planBackendDrivingRoute, resetAmapJsApiLoader, splitDrivingPoints } from './amapDriving';
+import { classifyDrivingFailure, coalesceConnectedRoadPaths, convertGpsPoint, extractDrivingPath, loadAmapJsApi, planAmapDrivingRoute, planBackendDrivingRoute, resetAmapJsApiLoader, splitDrivingPoints } from './amapDriving';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -41,6 +41,17 @@ describe('AMap Driving helpers', () => {
     expect(result.durationSeconds).toBe(3600);
   });
 
+  it('coalesces only exactly connected road fragments and preserves real gaps', () => {
+    expect(coalesceConnectedRoadPaths([
+      [[114, 30], [114.01, 30.01]],
+      [[114.01, 30.01], [114.02, 30.02]],
+      [[114.02001, 30.02001], [114.03, 30.03]],
+    ])).toEqual([
+      [[114, 30], [114.01, 30.01], [114.02, 30.02]],
+      [[114.02001, 30.02001], [114.03, 30.03]],
+    ]);
+  });
+
   it('uses road-access coordinates for Driving while preserving marker coordinates', async () => {
     let searchedStart: [number, number] | undefined;
     class Driving { search(start: [number, number], end: [number, number], _options: unknown, callback: (status: string, result: any) => void) { searchedStart = start; callback('complete', { routes: [{ distance: 1, time: 1, steps: [{ path: [start, end] }] }] }); } }
@@ -61,9 +72,24 @@ describe('AMap Driving helpers', () => {
       { id: 'c', lng: 114.2, lat: 30.2 },
     ] as any);
     expect(result.path).toEqual([[114, 30], [114.1, 30.1], [114.2, 30.2]]);
+    expect(result.paths).toEqual([
+      [[114, 30], [114.1, 30.1]],
+      [[114.1, 30.1], [114.2, 30.2]],
+    ]);
     expect(result.distanceMeters).toBe(3500);
     expect(result.durationSeconds).toBe(480);
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ origin: { lng: 114, lat: 30, coordinateSystem: 'wgs84' } });
+  });
+
+  it('keeps discontinuous AMap road fragments separate instead of drawing a synthetic connector', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ paths: [{ distanceKm: 1, durationMinutes: 2, polylines: [
+      [[114, 30], [114.01, 30.01]],
+      [[114.02, 30.02], [114.03, 30.03]],
+    ], polyline: [[114, 30], [114.01, 30.01], [114.02, 30.02], [114.03, 30.03]] }] }), { status: 200 })));
+    const result = await planBackendDrivingRoute([{ id: 'a', lng: 114, lat: 30 }, { id: 'b', lng: 114.03, lat: 30.03 }] as any);
+    expect(result.paths).toHaveLength(2);
+    expect(result.paths[0][result.paths[0].length - 1]).toEqual([114.01, 30.01]);
+    expect(result.paths[1][0]).toEqual([114.02, 30.02]);
   });
 
   it('does not insert the AMap script when the security code is missing', async () => {

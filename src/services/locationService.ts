@@ -59,6 +59,7 @@ export function getBrowserLocation(fallbackCity: CityName): Promise<UserLocation
 }
 
 type ReverseLocation = { formattedAddress?: string; city?: string; district?: string; township?: string; street?: string; number?: string };
+export type ResolvedManualLocation = { name: string; lat: number; lng: number; coordinateSystem: 'gcj02' };
 
 export async function reverseBrowserLocation(lat: number, lng: number, fetcher: typeof fetch = fetch): Promise<ReverseLocation | undefined> {
   const params = new URLSearchParams({ location: `${lng},${lat}`, coordsys: 'gps' });
@@ -66,6 +67,20 @@ export async function reverseBrowserLocation(lat: number, lng: number, fetcher: 
   if (!response.ok) return undefined;
   const payload = await response.json() as ReverseLocation;
   return payload && typeof payload === 'object' ? payload : undefined;
+}
+
+export async function resolveManualLocation(address: string, fetcher: typeof fetch = fetch): Promise<ResolvedManualLocation> {
+  const query = address.trim();
+  if (!query) throw new Error('请先输入出发地。');
+  const params = new URLSearchParams({ address: query });
+  const response = await fetcher(`/api/location/geocode?${params}`);
+  let payload: { error?: string; formattedAddress?: string; location?: { lng?: number; lat?: number } } | null = null;
+  try { payload = await response.json(); } catch { /* handled below */ }
+  if (!response.ok) throw new Error(payload?.error || '出发地解析失败，请补充城市、区县或道路名称。');
+  const lat = Number(payload?.location?.lat);
+  const lng = Number(payload?.location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('出发地没有返回有效坐标，请换一个更具体的名称。');
+  return { name: payload?.formattedAddress?.trim() || query, lat, lng, coordinateSystem: 'gcj02' };
 }
 
 function compactAddress(address: ReverseLocation) {

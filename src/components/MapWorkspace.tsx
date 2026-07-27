@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { AlertTriangle, ArrowLeft, Bus, CalendarDays, CarFront, Check, ChevronDown, CircleDollarSign, Clock3, CloudRain, CloudSun, Droplets, ExternalLink, Footprints, ImagePlus, Loader2, MapPin, Navigation, PencilLine, Plus, ReceiptText, RefreshCw, Route as RouteIcon, Sparkles, Sun, Sunrise, Sunset, TrainFront, Trash2, Umbrella, Utensils, Wind } from 'lucide-react';
 import type { TravelPlan } from '../utils/aiGenerator';
 import type { JournalEntry, RoutePoint, SmartRoute } from '../types/route';
-import { budgetTotal, getSafeDianpingUrl, getVerifiedDianpingShopUrl, parseLocalDate, type BudgetItem, type FoodRecommendation, type PlannedRoutePoint, type TripRequest } from '../domain/trip';
+import { budgetTotal, getSafeDianpingUrl, getVerifiedDianpingShopUrl, parseLocalDate, recalculateDailyTimeline, type BudgetItem, type FoodRecommendation, type PlannedRoutePoint, type TripRequest } from '../domain/trip';
 import { useTrip } from '../state/tripStore';
 import { resolveTransportComparison, toTransportPlanRequest, type TransportChoice, type TransportChoiceId, type TransportComparison, type TransportLeg, type TransportSegment, type TransitStrategy, type TransportMode } from '../services/transportService';
 import { recommendRestaurantsForRoute } from '../services/travelApi';
@@ -66,17 +66,6 @@ export function MapWorkspace({ route, plan, selectedPointId, activePointIndex, n
     ...value,
     route: { ...value.route, totalDistanceKm },
   }));
-  const updateFinalArrival = (arrivalTime: string) => patchPlan((value) => {
-    const points = value.route.points as PlannedRoutePoint[];
-    const finalIndex = points.length - 1;
-    return {
-      ...value,
-      route: {
-        ...value.route,
-        points: points.map((point, index) => index === finalIndex ? { ...point, time: arrivalTime, arrivalTime } : point),
-      },
-    };
-  });
   if (!tripPlan) return null;
 
   return <section className="overflow-hidden rounded-[2rem] border border-ink/10 bg-white shadow-soft">
@@ -100,7 +89,7 @@ export function MapWorkspace({ route, plan, selectedPointId, activePointIndex, n
 
       <aside aria-label="方案详情" className={`${mobilePane === 'details' ? 'flex' : 'hidden'} workspace-detail-glass min-h-0 min-w-0 flex-col overflow-hidden lg:flex`}>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 [scrollbar-gutter:stable]">
-          {tab === 'overview' && <Overview plan={tripPlan} route={route} summary={plan.summary} onSettings={updatePlanSettings} onBudget={setBudgetTotal} onDistance={updateRouteDistance} onArrival={updateFinalArrival} onDate={(startDate) => updateRequest({ startDate })} />}
+          {tab === 'overview' && <Overview plan={tripPlan} route={route} summary={plan.summary} onSettings={updatePlanSettings} onBudget={setBudgetTotal} onDistance={updateRouteDistance} onDate={(startDate) => updateRequest({ startDate })} />}
           {tab === 'stops' && <Stops points={route.points as PlannedRoutePoint[]} selectedId={selectedPointId} fallbackImageUrl={imageUrl} dailyRecords={tripPlan.dailyRecords} maxDays={request.days} onSelect={onSelectPoint} onPatchPoint={patchRoutePoint} onPatchNote={(id, note) => patchPlan((value) => ({ ...value, pointNotes: { ...value.pointNotes, [id]: note } }))} notes={tripPlan.pointNotes} />}
           {tab === 'days' && <Days plan={tripPlan} entries={journalEntries} onPatch={patchPlan} onEntries={setJournalEntries} onNotify={notify} />}
           {tab === 'weather' && <Weather request={request} lat={route.points[0]?.lat} lng={route.points[0]?.lng} />}
@@ -113,7 +102,7 @@ export function MapWorkspace({ route, plan, selectedPointId, activePointIndex, n
   </section>;
 }
 
-function Overview({ plan, route, summary, onSettings, onBudget, onDistance, onArrival, onDate }: { plan: NonNullable<ReturnType<typeof useTrip>['plan']>; route: SmartRoute; summary: string; onSettings: ReturnType<typeof useTrip>['updatePlanSettings']; onBudget: (total: number) => void; onDistance: (distance: number) => void; onArrival: (time: string) => void; onDate: (date: string) => void }) {
+function Overview({ plan, route, summary, onSettings, onBudget, onDistance, onDate }: { plan: NonNullable<ReturnType<typeof useTrip>['plan']>; route: SmartRoute; summary: string; onSettings: ReturnType<typeof useTrip>['updatePlanSettings']; onBudget: (total: number) => void; onDistance: (distance: number) => void; onDate: (date: string) => void }) {
   const finalPoint = plan.route.points[plan.route.points.length - 1] as PlannedRoutePoint | undefined;
   return <div className="space-y-4">
     <section className="workspace-dark-glass rounded-[1.65rem] p-5 text-white"><div className="text-[10px] font-black uppercase tracking-[0.2em] text-jade">已保存方案 · 自动同步</div><h3 className="mt-2 font-display text-2xl font-black leading-tight">{route.title}</h3><p className="mt-3 text-sm leading-6 text-white/65">{summary}</p></section>
@@ -123,8 +112,9 @@ function Overview({ plan, route, summary, onSettings, onBudget, onDistance, onAr
       <EditableMetric label="预计时长" value={Math.round(plan.settings.targetDurationMinutes / 6) / 10} min={1} max={24} step={0.5} suffix="小时" onCommit={(value) => onSettings({ targetDurationMinutes: Math.round(value * 60) })} />
       <EditableMetric label="路线距离" value={plan.route.totalDistanceKm} min={0} max={99999} step={0.1} suffix="km" onCommit={onDistance} />
       <EditableMetric label="计划预算" value={plan.requestSnapshot.budget} min={0} max={999999} prefix="¥" onCommit={onBudget} />
-      <TimeMetric label="出发时间" value={plan.settings.departureTime} tone="tower" onChange={(value) => onSettings({ departureTime: value })} />
-      <TimeMetric label="到达时间" value={finalPoint?.arrivalTime ?? finalPoint?.time ?? ''} tone="river" onChange={onArrival} />
+      <TimeMetric label="出发时间" value={plan.settings.departureTime} tone="tower" min="07:15" max="10:30" onChange={(value) => onSettings({ departureTime: value })} />
+      <TimeMetric label="到达时间" value={finalPoint?.arrivalTime ?? finalPoint?.time ?? ''} tone="river" readOnly />
+      <p className="col-span-2 rounded-xl border border-river/10 bg-river/[0.045] px-3 py-2 text-[10px] font-bold leading-5 text-river">AI 后端按每天的点位、停留与交通耗时分析；前端再次执行 07:30—21:30 安全边界校验，异常结果自动回退。</p>
       <label className="col-span-2 rounded-2xl bg-white p-4 shadow-sm transition focus-within:ring-4 focus-within:ring-jade/15"><span className="block text-xs font-black text-ink/50">出发日期</span><span className="mt-2 flex items-center gap-2 rounded-xl bg-ink/[0.035] px-2.5 py-2"><CalendarDays className="h-4 w-4 shrink-0 text-river" /><input aria-label="总览出发日期" type="date" value={plan.requestSnapshot.startDate} onChange={(event) => onDate(event.target.value)} className="focus-ring min-w-0 w-full bg-transparent text-sm font-black text-ink" /></span></label>
     </div>
   </div>;
@@ -291,8 +281,19 @@ const RAILWAY_STATION_CODES: Readonly<Record<string, string>> = {
   武汉站: 'WHN', 宜昌东站: 'HAN', 恩施站: 'ESN', 荆州站: 'JBN', 襄阳东站: 'EKN', 黄石北站: 'KSN',
 };
 
+const RAILWAY_STATION_TIMETABLE_PAGES: Readonly<Record<string, string>> = {
+  武汉站: 'https://www.crecc.com/hubei/wuhan/wuhan.html',
+  宜昌东站: 'https://www.crecc.com/hubei/yichang/yichangdong.html',
+  恩施站: 'https://www.crecc.com/hubei/enshi/enshi.html',
+  荆州站: 'https://www.crecc.com/hubei/jingzhou/jingzhou.html',
+  襄阳东站: 'https://www.crecc.com/hubei/xiangyang/xiangyangdong.html',
+  黄石北站: 'https://www.crecc.com/hubei/huangshi/huangshibei.html',
+};
+
 export function getRailwayStationTimetableUrl(stationName: string, date?: string) {
   const name = stationName.trim();
+  const directTimetablePage = RAILWAY_STATION_TIMETABLE_PAGES[name];
+  if (directTimetablePage) return directTimetablePage;
   const stationCode = RAILWAY_STATION_CODES[name];
   if (!stationCode) return 'https://kyfw.12306.cn/otn/czxx/init';
   const queryDate = /^\d{4}-\d{2}-\d{2}$/.test(date ?? '') ? date! : new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -302,7 +303,7 @@ export function getRailwayStationTimetableUrl(stationName: string, date?: string
 
 export function getPointPrimaryDetailLink(point: Pick<RoutePoint, 'name' | 'city' | 'type'> & Partial<Pick<RoutePoint, 'lat' | 'lng'>>, date?: string): PointPrimaryDetailLink {
   const links = getPointServiceLinks(point, date);
-  if (links.kind === 'railway' && links.timetableUrl) return { url: links.timetableUrl, label: `12306 · ${point.name}到发车次`, ariaLabel: '12306到发车次与到达时间', source: 'railway' };
+  if (links.kind === 'railway' && links.timetableUrl) return { url: links.timetableUrl, label: `全部车次 · ${point.name}`, ariaLabel: `${point.name}全部经过车次与到发时间`, source: 'railway' };
   if (links.detailUrl) return { url: links.detailUrl, label: '携程 · 景点详情', ariaLabel: '携程景点详细信息', source: 'ctrip' };
   return { url: links.amapUrl, label: '高德 · 地点信息', ariaLabel: '高德地点信息', source: 'amap' };
 }
@@ -313,7 +314,7 @@ export function getPointDetailLinks(point: Pick<RoutePoint, 'name' | 'city' | 't
     { url: links.amapUrl, label: '高德 · 地点地图', ariaLabel: '高德地图位置', source: 'amap' },
   ];
   if (links.kind === 'railway' && links.timetableUrl) {
-    actions.push({ url: links.timetableUrl, label: `12306 · ${point.name}到发车次`, ariaLabel: '12306到发车次与到达时间', source: 'railway' });
+    actions.push({ url: links.timetableUrl, label: `全部车次 · ${point.name}`, ariaLabel: `${point.name}全部经过车次与到发时间`, source: 'railway' });
   }
   actions.push(links.detailUrl
     ? { url: links.detailUrl, label: '携程 · 景点详情', ariaLabel: '携程景点详细信息', source: 'ctrip' }
@@ -360,15 +361,7 @@ export function normalizeTravelMinutes(value: string | number) {
 }
 
 export function recalculateEditableTimeline(points: PlannedRoutePoint[], departureTime: string): PlannedRoutePoint[] {
-  const [hours, minutes] = departureTime.split(':').map(Number);
-  let cursor = (Number.isFinite(hours) ? hours : 8) * 60 + (Number.isFinite(minutes) ? minutes : 30) + 15;
-  return points.map((point) => {
-    const durationMinutes = Math.max(10, Math.round(Number(point.durationMinutes) || 10));
-    const travelMinutesToNext = normalizeTravelMinutes(point.travelMinutesToNext);
-    const arrivalTime = formatTimelineClock(cursor);
-    cursor += durationMinutes + travelMinutesToNext;
-    return { ...point, time: arrivalTime, arrivalTime, stayMinutes: durationMinutes, durationMinutes, travelMinutesToNext };
-  });
+  return recalculateDailyTimeline(points, departureTime);
 }
 
 export function alignTransportDepartureTime(points: PlannedRoutePoint[], departureTime: string): PlannedRoutePoint[] {
@@ -892,8 +885,8 @@ function BudgetRow({ item, index, onUpdate, onDelete }: { item: BudgetItem; inde
 }
 
 function CommandButton({ icon: Icon, label, onClick, disabled, spin }: { icon: typeof RefreshCw; label: string; onClick?: () => void; disabled?: boolean; spin?: boolean }) { return <button type="button" aria-label={label} disabled={disabled} onClick={onClick} className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-xs font-black text-ink shadow-soft backdrop-blur disabled:opacity-60"><Icon className={`h-4 w-4 ${spin ? 'animate-spin' : ''}`} />{label}</button>; }
-function TimeMetric({ label, value, tone, onChange }: { label: string; value: string; tone: 'river' | 'tower'; onChange: (value: string) => void }) {
-  return <label className="rounded-2xl bg-white p-4 shadow-sm transition focus-within:ring-4 focus-within:ring-jade/15"><span className="block text-xs font-black text-ink/50">{label}</span><span className="mt-2 flex items-center gap-2"><Clock3 className={`h-4 w-4 shrink-0 ${tone === 'tower' ? 'text-tower' : 'text-river'}`} /><input aria-label={`总览${label}`} type="time" value={value} onChange={(event) => onChange(event.target.value)} className="focus-ring min-w-0 w-full bg-transparent font-display text-xl font-black text-ink" /></span></label>;
+function TimeMetric({ label, value, tone, min, max, readOnly = false, onChange }: { label: string; value: string; tone: 'river' | 'tower'; min?: string; max?: string; readOnly?: boolean; onChange?: (value: string) => void }) {
+  return <label className="rounded-2xl bg-white p-4 shadow-sm transition focus-within:ring-4 focus-within:ring-jade/15"><span className="block text-xs font-black text-ink/50">{label}{readOnly && <small className="ml-1.5 text-[9px] text-river">AI 安全排程</small>}</span><span className="mt-2 flex items-center gap-2"><Clock3 className={`h-4 w-4 shrink-0 ${tone === 'tower' ? 'text-tower' : 'text-river'}`} /><input aria-label={`总览${label}`} type="time" min={min} max={max} value={value} readOnly={readOnly} onChange={(event) => onChange?.(event.target.value)} className={`focus-ring min-w-0 w-full bg-transparent font-display text-xl font-black text-ink ${readOnly ? 'cursor-default' : ''}`} /></span></label>;
 }
 function EditableMetric({ label, value, min, max, step = 1, prefix = '', suffix = '', onCommit }: { label: string; value: number; min: number; max: number; step?: number; prefix?: string; suffix?: string; onCommit: (value: number) => void }) { const [draft, setDraft] = useState(String(value)); useEffect(() => setDraft(String(value)), [value]); const commit = () => { const parsed = Number(draft); const next = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : value; setDraft(String(next)); onCommit(next); }; return <label className="rounded-2xl bg-white p-4 shadow-sm transition focus-within:ring-4 focus-within:ring-jade/15"><span className="block text-xs font-black text-ink/50">{label}</span><span className="mt-2 flex items-baseline gap-1 font-display text-xl font-black text-ink">{prefix && <span>{prefix}</span>}<input aria-label={`总览${label}`} type="number" min={min} max={max} step={step} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} className="focus-ring min-w-0 w-full bg-transparent font-display text-xl font-black text-ink" />{suffix && <span className="shrink-0 text-sm">{suffix}</span>}</span></label>; }
 

@@ -1,4 +1,4 @@
-import { buildFoodRecommendations, type FoodRecommendation, type TripPlan, type TripRequest } from '../domain/trip';
+import { buildFoodRecommendations, calculateTimeline, type FoodRecommendation, type PlannedRoutePoint, type TripPlan, type TripRequest } from '../domain/trip';
 import type { RoutePoint } from '../types/route';
 
 export type AiTravelRequest = {
@@ -18,6 +18,12 @@ export type AiTravelRequest = {
   travelStyle: string | null;
 };
 
+export type AiItinerarySchedule = {
+  departureTime: string;
+  items: Array<{ id: string; day: number; arrivalTime: string; reason: string }>;
+  safetyNotes: string[];
+};
+
 export async function parseTravelRequestWithAi(text: string): Promise<AiTravelRequest> {
   const response = await fetch(apiUrl('/api/ai/parse-request'), {
     method: 'POST',
@@ -29,17 +35,36 @@ export async function parseTravelRequestWithAi(text: string): Promise<AiTravelRe
   return payload.data as AiTravelRequest;
 }
 
-export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest): Promise<{ analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[] }> {
+export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest): Promise<{ analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule }> {
   const [places, foods] = await Promise.allSettled([recommendAttractions(request), recommendRestaurantsForRoute(request, plan.route.points)]);
   const routePoints = places.status === 'fulfilled' ? places.value : [];
-  const analysisRoute = routePoints.length ? [{ ...plan.route.startPoint }, ...routePoints] : plan.route.points;
-  const analysis = await analyzeTrip({ ...plan, route: { ...plan.route, points: analysisRoute as TripPlan['route']['points'] } }, request).catch(() => '');
-  const result: { analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[] } = {};
+  const analysisRoute = routePoints.length ? [{ ...plan.route.startPoint, day: 1 }, ...routePoints] : plan.route.points;
+  const timeline = calculateTimeline(analysisRoute, plan.settings.departureTime);
+  const [analysis, schedule] = await Promise.all([
+    analyzeTrip({ ...plan, route: { ...plan.route, points: timeline } }, request).catch(() => ''),
+    requestAiSchedule(timeline, request, plan.settings.departureTime).catch(() => undefined),
+  ]);
+  const result: { analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule } = {};
   if (analysis) result.analysis = analysis;
+  if (schedule) result.schedule = schedule;
   if (foods.status === 'fulfilled' && foods.value.length) result.foods = foods.value;
   if (routePoints.length) result.routePoints = routePoints;
   if (!result.analysis && !result.foods && !result.routePoints) throw new Error('AI 与高德个性化服务暂时不可用');
   return result;
+}
+
+async function requestAiSchedule(points: PlannedRoutePoint[], request: TripRequest, departureTime: string): Promise<AiItinerarySchedule> {
+  const response = await fetch(apiUrl('/api/ai/schedule'), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      city: request.destinationCity, days: request.days, travelerType: request.travelerType,
+      specialNeeds: request.specialNeeds, departureTime,
+      points: points.map((point) => ({ id: point.id, name: point.name, day: point.day ?? 1, stayMinutes: point.durationMinutes, travelMinutesToNext: point.travelMinutesToNext, openingHours: point.openingHours ?? null })),
+    }),
+  });
+  const payload = await readPayload(response, 'AI 安全排程失败');
+  if (!payload.data || !Array.isArray(payload.data.items)) throw new Error('AI 安全排程返回格式不正确');
+  return payload.data as AiItinerarySchedule;
 }
 
 async function analyzeTrip(plan: TripPlan, request: TripRequest) {

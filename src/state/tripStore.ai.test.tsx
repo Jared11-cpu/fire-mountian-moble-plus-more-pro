@@ -17,6 +17,8 @@ function Harness() {
     <output data-testid="generating">{String(isGenerating)}</output>
     <output data-testid="source">{plan?.generationSource ?? 'none'}</output>
     <output data-testid="summary">{plan?.content.summary ?? ''}</output>
+    <output data-testid="departure">{plan?.settings.departureTime ?? ''}</output>
+    <output data-testid="arrival">{plan?.route.points[plan.route.points.length - 1]?.time ?? ''}</output>
     <button onClick={() => { void generateFromText('武汉两天，必须去武汉长江大桥').catch(() => undefined); }}>生成最终方案</button>
   </div>;
 }
@@ -48,11 +50,17 @@ describe('AI plan publication', () => {
       coordinateSystem: 'gcj02', time: '09:00', stayMinutes: 90, reason: '用户明确要求且已由高德核验。',
       photoTip: '拍摄桥体与江景。', recordTip: '记录过江体验。', day: 1,
     };
-    await act(async () => finish({ analysis: '最终千问分析：路线包含用户指定的武汉长江大桥。', routePoints: [routePoint], foods: [] }));
+    const draft = vi.mocked(enrichTripPlanWithBackend).mock.calls[0][0];
+    await act(async () => finish({
+      analysis: '最终千问分析：路线包含用户指定的武汉长江大桥。', routePoints: [routePoint], foods: [],
+      schedule: { departureTime: '07:45', items: [{ id: draft.route.startPoint.id, day: 1, arrivalTime: '08:00', reason: '安全抵达起点' }, { id: routePoint.id, day: 1, arrivalTime: '15:00', reason: '预留充分交通时间' }], safetyNotes: ['避免夜间赶路'] },
+    }));
 
     await waitFor(() => expect(screen.getByTestId('generating')).toHaveTextContent('false'));
     expect(screen.getByTestId('source')).toHaveTextContent('qwen-amap');
     expect(screen.getByTestId('summary')).toHaveTextContent('最终千问分析');
+    expect(screen.getByTestId('departure')).toHaveTextContent('07:45');
+    expect(screen.getByTestId('arrival')).toHaveTextContent('15:00');
     expect(request.destinationCity).toBe('武汉');
   });
 });

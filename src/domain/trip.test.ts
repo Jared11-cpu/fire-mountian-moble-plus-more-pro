@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDaysIso, budgetTotal, buildFoodRecommendations, buildSocialCopy, calculateTimeline, daysBetween, decodeSharePlan, defaultTripRequest, encodeSharePlan, generateTripPlan, getSafeDianpingUrl, parseLocalDate, parseTravelRequest } from './trip';
+import { addDaysIso, budgetTotal, buildFoodRecommendations, buildSocialCopy, calculateTimeline, daysBetween, decodeSharePlan, defaultTripRequest, encodeSharePlan, generateTripPlan, getSafeDianpingUrl, normalizePlanTimeline, parseLocalDate, parseTravelRequest, type PlannedRoutePoint } from './trip';
 import type { RoutePoint } from '../types/route';
 
 describe('buildFoodRecommendations', () => {
@@ -116,6 +116,28 @@ describe('dates, timeline and plan integrity', () => {
     expect(plan.requestSnapshot.interests).toEqual(['拍照']);
     expect(plan.route.title).not.toContain('拍照 × 拍照');
     expect(budgetTotal([{ id: '1', item: 'A', amount: 20, note: '' }, { id: '2', item: 'B', amount: 30, note: '' }])).toBe(50);
+  });
+
+  it('多日行程每天独立排程，并将到达时间限制在合理日间范围', () => {
+    const request = { ...defaultTripRequest('宜昌'), days: 2, endDate: addDaysIso(defaultTripRequest('宜昌').startDate, 1) };
+    const plan = generateTripPlan(request);
+    const planPoints = plan.route.points as PlannedRoutePoint[];
+    const points = planPoints.map((item, index) => ({
+      ...item,
+      day: index < 3 ? 1 : 2,
+      arrivalTime: index === planPoints.length - 1 ? '00:27' : item.arrivalTime,
+      time: index === planPoints.length - 1 ? '00:27' : item.time,
+    }));
+    const normalized = normalizePlanTimeline({ ...plan, route: { ...plan.route, points } });
+    const normalizedPoints = normalized.route.points as PlannedRoutePoint[];
+    const dayTwo = normalizedPoints.filter((item) => item.day === 2);
+
+    expect(dayTwo[0]?.arrivalTime).toBe('08:45');
+    expect(normalizedPoints.every((item) => {
+      const minutes = toMinutes(item.arrivalTime);
+      return minutes >= 7 * 60 + 30 && minutes <= 21 * 60 + 30;
+    })).toBe(true);
+    expect(normalizedPoints.some((item) => item.arrivalTime.startsWith('00:'))).toBe(false);
   });
 
   it('新方案的计划预算与实际支出相互独立', () => {

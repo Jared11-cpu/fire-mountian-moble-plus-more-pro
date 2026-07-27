@@ -1,0 +1,11 @@
+.git
+.vercel
+node_modules
+dist
+artifacts
+test-results
+pet-runs
+e2e
+fianlly-max-pro-ready-me-fire-mountian-cup-V3
+CURRENT_PROGRESS.md
+*.docx

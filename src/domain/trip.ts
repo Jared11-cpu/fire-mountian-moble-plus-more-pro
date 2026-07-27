@@ -248,15 +248,80 @@ export function generateTripPlan(requestInput: TripRequest, previous?: TripPlan 
 }
 
 export function calculateTimeline(points: RoutePoint[], departureTime: string): PlannedRoutePoint[] {
-  let cursor = toMinutes(departureTime) + 15;
-  return points.map((point, index) => {
-    const durationMinutes = Math.max(10, Number((point as PlannedRoutePoint).durationMinutes ?? point.stayMinutes) || 30);
-    const next = points[index + 1];
-    const travelMinutesToNext = next ? travelMinutes(point, next) : 0;
-    const arrivalTime = fromMinutes(cursor);
-    cursor += durationMinutes + travelMinutesToNext;
-    return { ...point, time: arrivalTime, stayMinutes: durationMinutes, arrivalTime, durationMinutes, travelMinutesToNext };
-  });
+  return scheduleDailyTimeline(points, departureTime, (point, next) => next ? travelMinutes(point, next) : 0);
+}
+
+export function normalizePlanTimeline(plan: TripPlan): TripPlan {
+  const points = recalculateDailyTimeline(plan.route.points, plan.settings.departureTime);
+  return {
+    ...plan,
+    route: { ...plan.route, points },
+    settings: {
+      ...plan.settings,
+      targetDurationMinutes: totalPlanMinutes(points),
+    },
+  };
+}
+
+export function recalculateDailyTimeline(points: PlannedRoutePoint[], departureTime: string): PlannedRoutePoint[] {
+  return scheduleDailyTimeline(points, departureTime, (point, next) => next ? normalizeTravelGap(point.travelMinutesToNext) : 0);
+}
+
+function scheduleDailyTimeline(
+  points: RoutePoint[],
+  departureTime: string,
+  resolveTravel: (point: PlannedRoutePoint, next?: RoutePoint) => number,
+): PlannedRoutePoint[] {
+  if (!points.length) return [];
+  const preferredStart = normalizeDayStart(departureTime) + 15;
+  const scheduled: PlannedRoutePoint[] = [];
+  const groups = groupConsecutiveDays(points);
+
+  for (const group of groups) {
+    const prepared = group.map((point, index) => {
+      const durationMinutes = Math.max(10, Math.round(Number((point as PlannedRoutePoint).durationMinutes ?? point.stayMinutes) || 30));
+      const next = group[index + 1];
+      const travelMinutesToNext = next ? normalizeTravelGap(resolveTravel(point as PlannedRoutePoint, next)) : 0;
+      return { point, durationMinutes, travelMinutesToNext };
+    });
+    const spanToLastArrival = prepared.slice(0, -1).reduce((sum, item) => sum + item.durationMinutes + item.travelMinutesToNext, 0);
+    const earliestStart = 7 * 60 + 30;
+    const latestArrival = 21 * 60 + 30;
+    const start = Math.max(earliestStart, Math.min(preferredStart, latestArrival - spanToLastArrival));
+    const scale = spanToLastArrival > 0 ? Math.min(1, (latestArrival - start) / spanToLastArrival) : 1;
+    let elapsed = 0;
+
+    prepared.forEach(({ point, durationMinutes, travelMinutesToNext }) => {
+      const arrivalTime = fromMinutes(start + Math.round(elapsed * scale));
+      scheduled.push({ ...point, time: arrivalTime, stayMinutes: durationMinutes, arrivalTime, durationMinutes, travelMinutesToNext });
+      elapsed += durationMinutes + travelMinutesToNext;
+    });
+  }
+  return scheduled;
+}
+
+function groupConsecutiveDays(points: RoutePoint[]) {
+  const groups: RoutePoint[][] = [];
+  let currentDay: number | undefined;
+  for (const point of points) {
+    const day = Math.max(1, Math.round(Number(point.day) || 1));
+    if (day !== currentDay) {
+      groups.push([]);
+      currentDay = day;
+    }
+    groups[groups.length - 1].push({ ...point, day });
+  }
+  return groups;
+}
+
+function normalizeDayStart(value: string) {
+  const parsed = /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? toMinutes(value) : 8 * 60 + 30;
+  return Math.min(10 * 60 + 30, Math.max(7 * 60 + 15, parsed));
+}
+
+function normalizeTravelGap(value: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(12 * 60, Math.max(0, Math.round(parsed))) : 0;
 }
 
 export function comparePlans(previous: TripPlan, next: TripPlan): PlanDifference {

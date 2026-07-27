@@ -24,26 +24,41 @@ describe('getPointServiceLinks', () => {
     expect(links.detailUrl).toBeUndefined();
     expect(links.bookingUrl).toContain('12306.cn');
     expect(links.amapUrl).toContain(encodeURIComponent('宜昌 宜昌东站'));
-    expect(links.timetableUrl).toBe('https://kyfw.12306.cn/otn/czxx/init?date=2026-07-19&station_code=HAN&station_name=%E5%AE%9C%E6%98%8C%E4%B8%9C%E7%AB%99');
+    expect(links.timetableUrl).toBe('https://www.crecc.com/hubei/yichang/yichangdong.html');
   });
 
-  it('uses only the station-specific timetable as the railway primary action', () => {
+  it('uses a no-input station-specific timetable as the railway primary action', () => {
     expect(getPointPrimaryDetailLink({ name: '武汉站', city: '武汉', type: 'start' }, '2026-07-19')).toMatchObject({
       source: 'railway',
-      label: '12306 · 武汉站到发车次',
-      url: 'https://kyfw.12306.cn/otn/czxx/init?date=2026-07-19&station_code=WHN&station_name=%E6%AD%A6%E6%B1%89%E7%AB%99',
+      label: '全部车次 · 武汉站',
+      url: 'https://www.crecc.com/hubei/wuhan/wuhan.html',
     });
   });
 
-  it('builds direct 12306 station timetable links for every supported Hubei start station', () => {
-    const expectedCodes = { 武汉站: 'WHN', 宜昌东站: 'HAN', 恩施站: 'ESN', 荆州站: 'JBN', 襄阳东站: 'EKN', 黄石北站: 'KSN' } as const;
-    for (const [stationName, stationCode] of Object.entries(expectedCodes)) {
+  it('builds zero-input detailed timetable pages for every supported Hubei start station', () => {
+    const expectedPaths = {
+      武汉站: '/hubei/wuhan/wuhan.html',
+      宜昌东站: '/hubei/yichang/yichangdong.html',
+      恩施站: '/hubei/enshi/enshi.html',
+      荆州站: '/hubei/jingzhou/jingzhou.html',
+      襄阳东站: '/hubei/xiangyang/xiangyangdong.html',
+      黄石北站: '/hubei/huangshi/huangshibei.html',
+    } as const;
+    for (const [stationName, pathname] of Object.entries(expectedPaths)) {
       const url = new URL(getRailwayStationTimetableUrl(stationName, '2026-07-19'));
-      expect(url.origin + url.pathname).toBe('https://kyfw.12306.cn/otn/czxx/init');
-      expect(url.searchParams.get('date')).toBe('2026-07-19');
-      expect(url.searchParams.get('station_code')).toBe(stationCode);
-      expect(url.searchParams.get('station_name')).toBe(stationName);
+      expect(url.origin).toBe('https://www.crecc.com');
+      expect(url.pathname).toBe(pathname);
+      expect(url.search).toBe('');
     }
+  });
+
+  it('opens the Xiangyang East all-trains page directly without any user-entered query', () => {
+    expect(getPointPrimaryDetailLink({ name: '襄阳东站', city: '襄阳', type: 'start' }, '2026-07-21')).toEqual({
+      source: 'railway',
+      label: '全部车次 · 襄阳东站',
+      ariaLabel: '襄阳东站全部经过车次与到发时间',
+      url: 'https://www.crecc.com/hubei/xiangyang/xiangyangdong.html',
+    });
   });
 
   it('routes every non-station point to Ctrip details and ticket search', () => {

@@ -1,5 +1,44 @@
 import { expect, test } from '@playwright/test';
 
+test('homepage autoplay advances to the next city after five seconds', async ({ page }) => {
+  await page.goto('/#/');
+  await expect(page.getByRole('heading', { name: '宜昌' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '武汉' })).toBeVisible({ timeout: 6_000 });
+});
+
+test('homepage opens on the cinematic city showcase and enters Planner on demand', async ({ page }) => {
+  await page.goto('/#/');
+  await expect(page.getByRole('heading', { name: '宜昌' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '懂你，也懂湖北' })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
+  await page.getByRole('button', { name: '查看武汉' }).click();
+  await expect(page.getByRole('heading', { name: '武汉' })).toBeVisible();
+  await page.getByRole('button', { name: '下一座城市' }).click();
+  await expect(page.getByRole('heading', { name: '恩施' })).toBeVisible();
+  await page.getByRole('button', { name: '上一座城市' }).click();
+  await expect(page.getByRole('heading', { name: '武汉' })).toBeVisible();
+  await page.getByRole('button', { name: '暂停自动播放' }).click();
+  await expect(page.getByRole('button', { name: '继续自动播放' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '继续自动播放' }).click();
+  await expect(page.getByRole('button', { name: '暂停自动播放' })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: '以武汉开始规划' }).click();
+  await expect(page).toHaveURL(/#\/planner$/);
+  await expect(page.getByRole('heading', { name: '懂你，也懂湖北' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '生成我的武汉行程' })).toBeVisible();
+});
+
+test('mobile homepage keeps the immersive navigation and carousel operable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/#/');
+  await expect(page.getByLabel('当前城市编号 01')).toBeVisible();
+  await expect(page.getByRole('button', { name: '打开导航菜单' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '宜昌' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
+  await page.getByRole('button', { name: '下一座城市' }).click();
+  await expect(page.getByRole('heading', { name: '武汉' })).toBeVisible();
+  await expect(page.getByLabel('当前城市编号 02')).toBeVisible();
+});
+
 test('HashRouter direct refresh and browser history', async ({ page }) => {
   await page.goto('/#/planner');
   await expect(page.getByRole('heading', { name: '懂你，也懂湖北' })).toBeVisible();

@@ -51,7 +51,7 @@ export type TransportPlanRequest = {
   strategy: TransitStrategy;
   travelerType: TripRequest['travelerType'];
   specialNeeds: TripRequest['specialNeeds'];
-  points: Array<Pick<PlannedRoutePoint, 'id' | 'name' | 'lat' | 'lng' | 'arrivalTime' | 'durationMinutes' | 'travelMinutesToNext'>>;
+  points: Array<Pick<PlannedRoutePoint, 'id' | 'name' | 'lat' | 'lng' | 'day' | 'arrivalTime' | 'durationMinutes' | 'travelMinutesToNext'>>;
 };
 
 export type TransportPlanResponse = {
@@ -200,8 +200,7 @@ export async function resolveDrivingTransportPlan(request: TransportPlanRequest,
   const fetcher = options.fetcher ?? fetch;
   if (!endpoint) return buildRulesDrivingPlan(request);
   try {
-    const pathResults = await Promise.all(request.points.slice(0, -1).map(async (point, index) => {
-      const next = request.points[index + 1];
+    const pathResults = await Promise.all(sameDayPointPairs(request.points).map(async ({ point, next }) => {
       const response = await fetcher(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: options.signal,
         body: JSON.stringify({ mode: 'driving', strategy: 0, origin: { name: point.name, lng: point.lng, lat: point.lat }, destination: { name: next.name, lng: next.lng, lat: next.lat } }),
@@ -266,13 +265,12 @@ export function toTransportPlanRequest(request: TripRequest, points: PlannedRout
     strategy,
     travelerType: request.travelerType,
     specialNeeds: request.specialNeeds,
-    points: points.map(({ id, name, lat, lng, arrivalTime, durationMinutes, travelMinutesToNext }) => ({ id, name, lat, lng, arrivalTime, durationMinutes, travelMinutesToNext })),
+    points: points.map(({ id, name, lat, lng, day, arrivalTime, durationMinutes, travelMinutesToNext }) => ({ id, name, lat, lng, day, arrivalTime, durationMinutes, travelMinutesToNext })),
   };
 }
 
 export function buildRulesTransportPlan(request: TransportPlanRequest): TransportPlanResponse {
-  const segments = request.points.slice(0, -1).map((point, index): TransportSegment => {
-    const next = request.points[index + 1];
+  const segments = sameDayPointPairs(request.points).map(({ point, next }): TransportSegment => {
     const distanceKm = haversine(point.lat, point.lng, next.lat, next.lng);
     const durationMinutes = Math.max(1, point.travelMinutesToNext);
     const mode = chooseMode(distanceKm, durationMinutes, request.specialNeeds);
@@ -301,8 +299,7 @@ export function buildRulesTransportPlan(request: TransportPlanRequest): Transpor
 }
 
 export function buildRulesDrivingPlan(request: TransportPlanRequest): TransportPlanResponse {
-  const segments = request.points.slice(0, -1).map((point, index): TransportSegment => {
-    const next = request.points[index + 1];
+  const segments = sameDayPointPairs(request.points).map(({ point, next }): TransportSegment => {
     const straightDistance = haversine(point.lat, point.lng, next.lat, next.lng);
     const distanceKm = round1(straightDistance * 1.28);
     const durationMinutes = Math.max(8, Math.round(distanceKm / (distanceKm > 30 ? 55 : 32) * 60));
@@ -335,6 +332,13 @@ function fallbackTransportAdvice(choices: TransportChoice[], request: TransportP
 
 function strategyLabel(value: TransitStrategy) { return ({ recommended: '综合推荐', fastest: '时间短', economy: '最省钱', 'fewest-transfers': '少换乘', 'least-walking': '少步行', 'subway-first': '地铁优先' } as const)[value]; }
 function round1(value: number) { return Math.round(value * 10) / 10; }
+
+function sameDayPointPairs(points: TransportPlanRequest['points']) {
+  return points.slice(0, -1).flatMap((point, index) => {
+    const next = points[index + 1];
+    return (point.day ?? 1) === (next.day ?? 1) ? [{ point, next }] : [];
+  });
+}
 
 export function transportModeForLegs(legs: TransportLeg[]): TransportMode {
   if (legs.some((leg) => leg.mode === 'subway')) return '地铁';

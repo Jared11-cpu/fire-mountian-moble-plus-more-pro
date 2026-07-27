@@ -28,6 +28,24 @@ export async function reverseGeocode(env, query) {
   };
 }
 
+export async function forwardGeocode(env, query) {
+  const key = requireKey(env);
+  const address = assertText(query.get('address') || query.get('q'), '出发地', { max: 200 });
+  const params = new URLSearchParams({ key, address });
+  const region = String(query.get('region') || '').trim();
+  if (region) params.set('city', region);
+  const data = await amapJson(`/v3/geocode/geo?${params}`, '高德正向地理编码');
+  const match = data.geocodes?.[0];
+  const [lng, lat] = String(match?.location || '').split(',').map(Number);
+  if (!match || !Number.isFinite(lng) || !Number.isFinite(lat)) throw httpError(404, '未找到该出发地，请补充城市、区县或道路名称');
+  return {
+    source: 'amap', freshness: 'live-query', generatedAt: new Date().toISOString(),
+    query: address, formattedAddress: match.formatted_address || address,
+    province: match.province || '', city: match.city || '', district: match.district || '', adcode: match.adcode || '',
+    location: { lng, lat }, coordinateSystem: 'gcj02',
+  };
+}
+
 export async function searchPois(env, query, category = 'poi') {
   const key = requireKey(env);
   const keywords = assertText(query.get('keywords') || query.get('q') || defaultKeyword(category), '搜索关键词', { max: 120 });
@@ -118,7 +136,12 @@ export async function transitPlan(env, input) {
   validateTransitRequest(input);
   const request = { ...input, cityCode: await resolveTransitCityCode(key, input.city) };
   const segments = [];
-  for (let index = 0; index < input.points.length - 1; index += 1) segments.push(await transitSegment(key, request, input.points[index], input.points[index + 1], index));
+  for (let index = 0; index < input.points.length - 1; index += 1) {
+    const from = input.points[index];
+    const to = input.points[index + 1];
+    if ((from.day || 1) !== (to.day || 1)) continue;
+    segments.push(await transitSegment(key, request, from, to, index));
+  }
   const totalMinutes = segments.reduce((sum, segment) => sum + segment.durationMinutes, 0);
   const totalDistanceKm = round1(segments.reduce((sum, segment) => sum + segment.distanceKm, 0));
   const fares = segments.map((segment) => segment.fare).filter((value) => value !== undefined);
@@ -208,7 +231,22 @@ async function resolveTransitCityCode(key, city) {
 function requireKey(env) { if (!env.AMAP_WEB_SERVICE_KEY) throw httpError(503, '尚未配置高德 Web 服务 Key'); return env.AMAP_WEB_SERVICE_KEY; }
 function validateTransitRequest(input) { if (!input || !Array.isArray(input.points) || input.points.length < 2 || input.points.length > 12) throw httpError(400, 'points 必须包含 2-12 个站点'); if (!input.city || !/^\d{4}-\d{2}-\d{2}$/.test(input.departureDate || '') || !/^\d{2}:\d{2}$/.test(input.departureTime || '')) throw httpError(400, 'city、departureDate 和 departureTime 必填且格式不正确'); input.points.forEach((point) => { requiredCoordinate(point, 'point'); assertText(point.name, '站点名称', { max: 120 }); }); }
 function normalizePoi(poi) { const business = poi.business || poi.biz_ext || {}; const [lng, lat] = String(poi.location || '').split(',').map(Number); return { id: String(poi.id || ''), name: String(poi.name || ''), category: poi.type, typeCode: poi.typecode, address: Array.isArray(poi.address) ? poi.address.join('') : String(poi.address || ''), city: poi.cityname, district: poi.adname, location: Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null, distanceMeters: numberOrNull(poi.distance), rating: numberOrNull(business.rating), averageCost: numberOrNull(business.cost || business.avg_cost), openingHours: business.opentime_today || business.open_time || null, telephone: poi.tel || business.tel || null, photos: (poi.photos || []).slice(0, 5).map((photo) => photo.url).filter(Boolean) }; }
-function normalizePath(path) { const durationMinutes = secondsToMinutes(path.cost?.duration ?? path.duration); const distanceKm = round1(Number(path.distance ?? 0) / 1000); return { durationMinutes, distanceKm, trafficLights: numberOrNull(path.cost?.traffic_lights), tolls: money(path.cost?.tolls ?? path.tolls), polyline: (path.steps || []).flatMap((step) => parsePolyline(step.polyline)), steps: (path.steps || []).slice(0, 100).map((step) => ({ instruction: step.instruction, road: step.road_name || step.road, distanceMeters: numberOrNull(step.step_distance || step.distance), durationMinutes: secondsToMinutes(step.cost?.duration ?? step.duration) })) }; }
+function normalizePath(path) {
+  const durationMinutes = secondsToMinutes(path.cost?.duration ?? path.duration);
+  const distanceKm = round1(Number(path.distance ?? 0) / 1000);
+  const polylines = (path.steps || []).map((step) => parsePolyline(step.polyline)).filter((line) => line.length > 1);
+  return {
+    durationMinutes,
+    distanceKm,
+    trafficLights: numberOrNull(path.cost?.traffic_lights),
+    tolls: money(path.cost?.tolls ?? path.tolls),
+    coordinateSystem: 'gcj02',
+    geometrySource: 'amap-directions-v5',
+    polylines,
+    polyline: polylines.flat(),
+    steps: (path.steps || []).slice(0, 100).map((step) => ({ instruction: step.instruction, road: step.road_name || step.road, distanceMeters: numberOrNull(step.step_distance || step.distance), durationMinutes: secondsToMinutes(step.cost?.duration ?? step.duration) })),
+  };
+}
 function categoryTypes(category) { if (category === 'restaurant') return '050000'; if (category === 'shop') return '060000'; if (category === 'hotel') return '100000'; if (category === 'attraction') return '110000'; return ''; }
 function defaultKeyword(category) { return category === 'restaurant' ? '餐厅' : category === 'shop' ? '商店' : category === 'hotel' ? '酒店' : category === 'attraction' ? '景点' : '旅游'; }
 function coordinateObject(value) { const [lng, lat] = requireCoordinateString(value, '坐标').split(',').map(Number); return { lng, lat }; }
