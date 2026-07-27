@@ -12,14 +12,16 @@ vi.mock('../services/travelApi', () => ({
 }));
 
 function Harness() {
-  const { plan, isGenerating, generateFromText } = useTrip();
+  const { request, plan, isGenerating, generateFromText } = useTrip();
   return <div>
     <output data-testid="generating">{String(isGenerating)}</output>
     <output data-testid="source">{plan?.generationSource ?? 'none'}</output>
     <output data-testid="summary">{plan?.content.summary ?? ''}</output>
     <output data-testid="departure">{plan?.settings.departureTime ?? ''}</output>
     <output data-testid="arrival">{plan?.route.points[plan.route.points.length - 1]?.time ?? ''}</output>
+    <output data-testid="city">{request.destinationCity}</output>
     <button onClick={() => { void generateFromText('武汉两天，必须去武汉长江大桥').catch(() => undefined); }}>生成最终方案</button>
+    <button onClick={() => { void generateFromText('襄阳两天一夜，喜欢拍照和美食').catch(() => undefined); }}>生成襄阳方案</button>
   </div>;
 }
 
@@ -62,5 +64,29 @@ describe('AI plan publication', () => {
     expect(screen.getByTestId('departure')).toHaveTextContent('07:45');
     expect(screen.getByTestId('arrival')).toHaveTextContent('15:00');
     expect(request.destinationCity).toBe('武汉');
+  });
+
+  it('keeps the city explicitly written by the user when AI returns another supported city', async () => {
+    vi.mocked(parseTravelRequestWithAi).mockResolvedValue({
+      city: '黄石', startDate: null, days: 2, people: null, budgetPerPerson: 600,
+      interests: ['拍照', '美食'], dietaryNeeds: [], mobility: null, transportPreference: null,
+      hotelPreference: null, departureDeadline: null, requestedPlaces: [],
+      avoidPlaces: [], travelStyle: null,
+    });
+    const routePoint: RoutePoint = {
+      id: 'amap-gulongzhong', name: '古隆中', type: 'scenic', city: '襄阳', lng: 112.04, lat: 31.99,
+      coordinateSystem: 'gcj02', time: '09:00', stayMinutes: 120, reason: '襄阳代表性景点。',
+      photoTip: '拍摄山门与古建。', recordTip: '记录三国文化。', day: 1,
+    };
+    vi.mocked(enrichTripPlanWithBackend).mockResolvedValue({
+      analysis: '襄阳两日路线包含古隆中。', routePoints: [routePoint], foods: [],
+    });
+    render(<TripProvider><Harness /></TripProvider>);
+
+    await userEvent.click(screen.getByText('生成襄阳方案'));
+
+    await waitFor(() => expect(screen.getByTestId('generating')).toHaveTextContent('false'));
+    expect(screen.getByTestId('city')).toHaveTextContent('襄阳');
+    expect(screen.getByTestId('summary')).toHaveTextContent('襄阳两日路线');
   });
 });
