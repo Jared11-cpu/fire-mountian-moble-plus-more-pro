@@ -25,7 +25,7 @@ export type AiItinerarySchedule = {
 };
 
 export async function parseTravelRequestWithAi(text: string): Promise<AiTravelRequest> {
-  const response = await fetch(apiUrl('/api/ai/parse-request'), {
+  const response = await fetchTravelApi(apiUrl('/api/ai/parse-request'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -54,7 +54,7 @@ export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripReq
 }
 
 async function requestAiSchedule(points: PlannedRoutePoint[], request: TripRequest, departureTime: string): Promise<AiItinerarySchedule> {
-  const response = await fetch(apiUrl('/api/ai/schedule'), {
+  const response = await fetchTravelApi(apiUrl('/api/ai/schedule'), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       city: request.destinationCity, days: request.days, travelerType: request.travelerType,
@@ -68,7 +68,7 @@ async function requestAiSchedule(points: PlannedRoutePoint[], request: TripReque
 }
 
 async function analyzeTrip(plan: TripPlan, request: TripRequest) {
-  const response = await fetch(apiUrl('/api/ai/analyze'), {
+  const response = await fetchTravelApi(apiUrl('/api/ai/analyze'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -95,7 +95,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   const searches = await Promise.allSettled(queryTerms.map(async (query) => {
     const params = new URLSearchParams({ city: request.destinationCity, keywords: query, pageSize: '10' });
     if (required.includes(query)) params.set('allTypes', '1');
-    const response = await fetch(apiUrl(`/api/attractions/search?${params}`));
+    const response = await fetchTravelApi(apiUrl(`/api/attractions/search?${params}`));
     const payload = await readPayload(response, `“${query}”地点检索失败`);
     return { query, items: Array.isArray(payload.items) ? payload.items as Array<Record<string, any>> : [] };
   }));
@@ -111,7 +111,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   const byId = new Map(candidates.map((item) => [String(item.id), item]));
   let ranked: Array<Record<string, any>> = [];
   try {
-    const rankingResponse = await fetch(apiUrl('/api/ai/recommend'), {
+    const rankingResponse = await fetchTravelApi(apiUrl('/api/ai/recommend'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userPreferences: { prompt: request.freeText, city: request.destinationCity, days: request.days, interests: request.interests, travelerType: request.travelerType, specialNeeds: request.specialNeeds, requiredPlaces: required, avoidPlaces: request.avoidPlaces },
@@ -183,7 +183,7 @@ function toRoutePoint(item: Record<string, any>, request: TripRequest, index: nu
 
 export async function recommendRestaurantsForRoute(request: TripRequest, routePoints: RoutePoint[]): Promise<FoodRecommendation[]> {
   const verifiedFoods = buildFoodRecommendations(request);
-  const response = await fetch(apiUrl('/api/restaurants/guide'), {
+  const response = await fetchTravelApi(apiUrl('/api/restaurants/guide'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -276,4 +276,27 @@ async function readPayload(response: Response, message: string): Promise<any> {
 function apiUrl(path: string) {
   const base = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
   return base ? `${base}${path}` : path;
+}
+
+async function fetchTravelApi(input: RequestInfo | URL, init?: RequestInit) {
+  let lastResponse: Response | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(input, init);
+      if (!isTransientApiStatus(response.status) || attempt === 1) return response;
+      lastResponse = response;
+    } catch (error) {
+      if (init?.signal?.aborted) throw error;
+      lastError = error;
+      if (attempt === 1) throw error;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+  }
+  if (lastResponse) return lastResponse;
+  throw lastError instanceof Error ? lastError : new Error('旅行服务请求失败');
+}
+
+function isTransientApiStatus(status: number) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
 }
