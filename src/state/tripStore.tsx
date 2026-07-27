@@ -403,7 +403,7 @@ function GlobalStatus({ state }: { state: TripState }) {
       <div className="fixed bottom-4 left-4 z-[70] rounded-full border border-white/70 bg-white/90 px-3 py-2 text-xs font-black text-ink/65 shadow-soft backdrop-blur" aria-live="polite">
         {state.saveStatus === 'saving' ? '保存中…' : state.saveStatus === 'saved' ? '已保存' : state.saveStatus === 'error' ? '保存失败' : '尚未保存'}
       </div>
-      <div className="pointer-events-none fixed inset-x-4 top-24 z-[80] flex justify-center" aria-live="polite" aria-atomic="true">
+      <div className="app-toast-region pointer-events-none fixed inset-x-4 top-24 z-[80] flex justify-center" aria-live="polite" aria-atomic="true">
         {state.toast && <div className={`max-w-lg rounded-2xl px-5 py-3 text-sm font-bold text-white shadow-soft ${state.toast.tone === 'error' ? 'bg-red-600' : state.toast.tone === 'success' ? 'bg-jade' : 'bg-ink'}`}>{state.toast.message}</div>}
       </div>
     </>
