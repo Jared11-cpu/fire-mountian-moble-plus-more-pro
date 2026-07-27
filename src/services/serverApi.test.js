@@ -35,6 +35,19 @@ describe('Sites API router', () => {
     expect((await response.json()).data).toMatchObject({ city: '武汉', days: 2, people: 1, transportPreference: '地铁', requestedPlaces: ['武汉长江大桥'] });
   });
 
+  it('fills explicit travel facts when Qwen returns an empty but valid structure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ city: null, startDate: null, days: null, people: null, budgetPerPerson: null, interests: [], dietaryNeeds: [], mobility: null, transportPreference: null, hotelPreference: null, departureDeadline: null, requestedPlaces: [], avoidPlaces: [], travelStyle: null }) } }] }), { status: 200 })));
+    const response = await worker.fetch(new Request('https://example.test/api/ai/parse-request', { method: 'POST', body: JSON.stringify({ text: '襄阳两天一夜，预算600元，喜欢拍照和美食，不吃辣' }) }), { DASHSCOPE_API_KEY: 'test' });
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toMatchObject({
+      city: '襄阳',
+      days: 2,
+      budgetPerPerson: 600,
+      interests: ['拍照', '美食'],
+      dietaryNeeds: ['不吃辣'],
+    });
+  });
+
   it('returns normalized real restaurant facts from AMap', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: '1', count: '1', pois: [{ id: 'poi-1', name: '测试餐厅', type: '餐饮服务', location: '114.3,30.5', address: '测试路1号', business: { rating: '4.6', cost: '58', opentime_today: '10:00-22:00' } }] }), { status: 200 })));
     const response = await worker.fetch(new Request('https://example.test/api/restaurants/search?city=武汉&keywords=湖北菜'), { AMAP_WEB_SERVICE_KEY: 'test' });
