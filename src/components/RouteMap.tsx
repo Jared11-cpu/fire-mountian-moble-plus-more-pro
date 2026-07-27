@@ -50,6 +50,21 @@ export function RouteMap({ route, transportPlan, focusedTransportSegmentId, sele
   journalCardsRef.current = journalCards;
 
   useEffect(() => {
+    const target = container.current;
+    if (!target || typeof ResizeObserver === 'undefined') return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => mapRef.current?.resize?.());
+    });
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
     const requestId = ++requestIdRef.current;
     const isCurrent = () => !disposed && requestId === requestIdRef.current;
@@ -298,89 +313,7 @@ export function RouteMap({ route, transportPlan, focusedTransportSegmentId, sele
 
   return <section className={`min-w-0 overflow-hidden bg-white ${mapOnly ? 'h-full' : 'rounded-[1.75rem] shadow-soft ring-1 ring-ink/5'}`}>
     {!mapOnly && <div className="flex flex-col gap-4 border-b border-ink/5 p-5 md:flex-row md:items-center md:justify-between"><div><div className="inline-flex items-center gap-2 text-xs font-black tracking-[.16em] text-river"><Navigation className="h-4 w-4"/>LIVE ROUTE</div><h3 className="mt-2 font-display text-2xl font-black">{route.title}</h3><p className="mt-1 text-sm text-ink/50">{message}</p></div><div className="flex gap-2 text-xs font-bold"><span className="rounded-full bg-mist px-3 py-2">{route.totalDistanceKm} km</span><span className="rounded-full bg-mist px-3 py-2">{route.recommendedStartTime} 出发</span></div></div>}
-      <div className={mapOnly ? 'h-full min-w-0' : 'grid min-w-0 lg:grid-cols-[1.35fr_.65fr]'}><div className={`relative min-w-0 overflow-hidden bg-[#d8f1ee] ${mapOnly ? 'h-full min-h-[620px]' : 'min-h-[430px]'}`}><div ref={container} role="application" aria-label="可缩放和拖动的高德交互地图" data-map-zoom={liveMapZoom ?? ''} data-map-center={liveMapCenter} tabIndex={0} onKeyDown={(event) => { if (!mapRef.current) return; if (event.key === '+' || event.key === '=') { event.preventDefault(); mapRef.current.zoomIn?.(); } else if (event.key === '-') { event.preventDefault(); mapRef.current.zoomOut?.(); } else if (event.key === '0') { event.preventDefault(); resetInteractiveMapView(); } }} className={`absolute inset-0 transform-gpu outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-jade/50 ${!mapAvailable ? 'invisible' : ''}`}/>{mapAvailable && <MapInteractionControls label={`高德交互地图，当前缩放 ${liveMapZoom ?? '—'} 级`} onZoomIn={() => mapRef.current?.zoomIn?.()} onZoomOut={() => mapRef.current?.zoomOut?.()} onReset={resetInteractiveMapView} />}{mapAvailable && <div className={`pointer-events-none absolute bottom-3 left-3 z-20 rounded-full bg-white/92 px-3 py-1.5 text-xs font-black shadow-sm ${focusedTransportSegmentId ? 'text-tower' : 'text-river'}`}>{focusedTransportSegmentId ? focusedRoadStatus === 'loading' ? '正在查询本段真实道路…' : focusedRoadStatus === 'failed' ? '本段真实路线暂不可用' : '高德真实阶段路线' : usingTransitGeometry ? '动态公交/地铁路线' : '高德真实驾车路线'}</div>}{usingTransitGeometry && mapAvailable && <div className="pointer-events-none absolute bottom-12 left-3 z-20 flex flex-wrap gap-1.5 rounded-2xl bg-white/92 p-2 text-[9px] font-black shadow-sm"><MapLegend color="#c94f3d" label="地铁"/><MapLegend color="#0e6b72" label="公交"/><MapLegend color="#6b7280" label="步行" dashed/><MapLegend color="#d97706" label="驾车"/></div>}{!mapAvailable && status === 'planned' && <GaodeRasterRouteMap route={route} roadPaths={displayedRasterPaths} focusPath={displayedFocusedPath} focusStatus={focusedRoadStatus} focusedTransportSegmentId={focusedTransportSegmentId} selectedPointId={selectedPointId} onSelectPoint={onSelectPoint} journalCards={journalCards} />}{status === 'loading' && <div role="status" className="absolute inset-0 grid place-items-center bg-[#d8f1ee]"><div className="rounded-2xl bg-white/90 px-5 py-4 text-sm font-black text-river shadow-soft"><RefreshCw className="mr-2 inline h-4 w-4 animate-spin"/>正在思考并生成完整道路路线…</div></div>}{failed && <div role="alert" className="absolute inset-0 z-30 grid place-items-center bg-[#d8f1ee] p-5"><div className="w-full max-w-md rounded-[1.75rem] border border-red-200 bg-white/95 p-5 shadow-xl backdrop-blur"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-500"/><div className="min-w-0 flex-1"><strong className="block text-sm text-red-700">完整道路路线暂未生成</strong><p className="mt-1 text-xs font-bold leading-5 text-ink/55">{message}；当前不展示只有点或点到点直线的半成品。</p></div></div><button type="button" onClick={() => { resetAmapJsApiLoader(); setRetryVersion((value) => value + 1); }} className="mt-4 inline-flex w-full items-center justify-center gap-1 rounded-full bg-ink px-3 py-3 text-xs font-black text-white"><RefreshCw className="h-3.5 w-3.5"/>重新生成完整路线</button></div></div>}</div>
-      {!mapOnly&&<aside className="bg-[#fbfaf5] p-5">{selected&&<><div className="text-xs font-black tracking-[.16em] text-tower">STOP {route.points.findIndex(p=>p.id===selected.id)+1}</div><h4 className="mt-2 font-display text-3xl font-black">{selected.name}</h4><div className="mt-2 flex gap-2 text-xs font-bold text-ink/50"><span>{getPointTypeLabel(selected.type)}</span><span>·</span><span>{selected.time}</span><span>·</span><span>{selected.stayMinutes} 分钟</span></div><p className="mt-5 leading-7 text-ink/68">{selected.reason}</p><div className="mt-4 rounded-xl border-l-4 border-tower bg-white p-4 text-sm leading-6"><b>拍照：</b>{selected.photoTip}</div><div className="mt-3 rounded-xl bg-river/5 p-4 text-sm leading-6"><b>手账：</b>{selected.recordTip}</div></>}</aside>}
-    </div>
-  </section>;
-}
-
-function normalizeFailure(caught: unknown): DrivingSearchFailure {
-  if (caught && typeof caught === 'object' && 'status' in caught) return caught as DrivingSearchFailure;
-  return { status: 'error', error: caught };
-}
-
-function failureMessage(status: RoadPlanStatus) {
-  if (status === 'auth-error') return '高德 Key、安全密钥或域名白名单校验失败，请检查部署配置。';
-  if (status === 'network-error') return '高德脚本或路线服务网络请求失败，请检查网络后重试。';
-  if (status === 'no-data') return '高德没有返回可用道路方案，请调整点位后重试。';
-  return '道路服务暂时不可用，地图仅保留真实点位，不绘制估算直线。';
-}
-
-function createRouteMarker(AMap: any, map: any, point: RoutePoint, index: number, onSelectPoint: (point: RoutePoint) => void, active: boolean, journalCard?: RouteMapJournalCard) {
-  const color = pointColor(point.type);
-  const marker = new AMap.Marker({
-    position: [point.lng, point.lat],
-    title: point.name,
-    anchor: 'bottom-center',
-    content: markerContent(point, index, active, color),
-    label: journalCard ? {
-      content: markerLabelContent(point, index, journalCard, active),
-      direction: index % 2 ? 'left' : 'right',
-      offset: new AMap.Pixel(index % 2 ? -12 : 12, -20),
-    } : { content: `<span class="amap-route-name">${point.name}</span>`, direction: 'bottom', offset: new AMap.Pixel(0, 8) },
-  });
-  marker.on('click', () => onSelectPoint(point));
-  map.add(marker);
-  return marker;
-}
-
-function markerLabelContent(point: RoutePoint, index: number, card: RouteMapJournalCard, active: boolean) {
-  const photo = card.photoUrl ? `<img src="${escapeMarkerText(card.photoUrl)}" alt="" />` : `<span class="amap-journal-card-empty">旅</span>`;
-  return `<span class="amap-journal-card${active ? ' is-selected' : ''}">${photo}<span class="amap-journal-card-copy"><b>${index + 1}. ${escapeMarkerText(point.name)}</b><em>${escapeMarkerText(card.note || '这一站等待你的心得。')}</em><small>点击翻开手账</small></span></span>`;
-}
-
-function markerContent(point: RoutePoint, index: number, active: boolean, color = pointColor(point.type)) {
-  return `<button class="amap-smart-marker${active ? ' is-selected' : ''}" style="--marker:${color}" aria-label="${index + 1} ${escapeMarkerText(point.name)}"${active ? ' aria-current="location"' : ''}><span>${index + 1}</span></button>`;
-}
-
-function escapeMarkerText(value: string) { return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char); }
-
-function addRoadPolylines(AMap: any, map: any, paths: Array<Array<[number, number]>>) {
-  const overlays = paths.filter((path) => path.length > 1).flatMap((path, index) => {
-    const outline = new AMap.Polyline({
-      path,
-      strokeColor: '#ffffff',
-      strokeWeight: 12,
-      strokeOpacity: 0.92,
-      lineJoin: 'round',
-      lineCap: 'round',
-      zIndex: 45 + index * 2,
-    });
-    const routeLine = new AMap.Polyline({
-      path,
-      strokeColor: '#0E6B72',
-      strokeWeight: 7,
-      strokeOpacity: 0.96,
-      showDir: true,
-      lineJoin: 'round',
-      lineCap: 'round',
-      zIndex: 46 + index * 2,
-    });
-    return [outline, routeLine];
-  });
-  map.add(overlays);
-  return overlays;
-}
-
-function addTransportPolylines(AMap: any, map: any, segments: TransportSegment[]) {
-  const colors: Record<TransitLegMode, string> = { walk: '#6b7280', bus: '#0e6b72', subway: '#c94f3d', railway: '#7c3aed', taxi: '#d97706', shuttle: '#12a885' };
-  const overlays: any[] = [];
-  const groups: Record<string, TransportOverlayEntry[]> = {};
-  let overlayIndex = 0;
-  for (const segment of segments) {
-    groups[segment.id] = [];
-    for (const leg of segment.legs.filter((item) => item.polyline.length > 1)) {
-      const weight = leg.mode === 'walk' ? 5 : 7;
+      <div className={mapOnly ? 'h-full min-w-0' : 'grid min-w-0 lg:grid-cols-[1.35fr_.65fr]'}><div className={`relative min-w-0 overflow-hidden bg-[#d8f1ee] ${mapOnly ? 'h-full min-h-[620px]' : 'min-h-[430px]'}`}><div ref={container} role="application" aria-label="可缩放和拖动的高德交互地图" data-map-zoom={liveMapZoom ?? ''} data-map-center={liveMapCenter} tabIndex={0} onKeyDown={(event) => { if (!mapRef.current) return; if (event.key === '+' || event.key === '=') { event.preventDefault(); mapRef.current.zoomIn?.(); } else if (event.key === '-') { event.preventDefault(); mapRef.current.zoomOut?.(); } else if (event.key === '0') { event.preventDefault(); resetInteractiveMapView(); } }} className={`absolute inset-0 transform-gpu outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-jade/50 ${!mapAvailable ? 'invisible' : ''}`}/>{mapAvailable && <MapInteractionControls label={`高德交互地图，当前缩放 ${liveMapZoom ?? '—'} 级`} onZoomIn={() => mapRef.current?.zoomIn?.()} onZoomOut={() => mapRef.current?.zoomOut?.()} onReset={resetInteractiveMapView} />}{mapAvailable && <div className={`pointer-events-none absolute bottom-3 left-3 z-20 rounded-full bg-white/92 px-3 py-1.5 text-xs font-black shadow-sm ${focusedTransportSegmentId ? 'text-tower' : 'text-river'}`}>{focusedTransportSegmentId ? focusedRoadSta…1726 tokens truncated… leg.mode === 'walk' ? 5 : 7;
       const outline = new AMap.Polyline({ path: leg.polyline, strokeColor: '#ffffff', strokeWeight: weight + 4, strokeOpacity: 0.9, lineJoin: 'round', lineCap: 'round', zIndex: 45 + overlayIndex * 2 });
       const line = new AMap.Polyline({ path: leg.polyline, strokeColor: colors[leg.mode], strokeWeight: weight, strokeOpacity: 0.96, strokeStyle: leg.mode === 'walk' ? 'dashed' : 'solid', strokeDasharray: leg.mode === 'walk' ? [8, 8] : undefined, showDir: leg.mode !== 'subway', lineJoin: 'round', lineCap: 'round', zIndex: 46 + overlayIndex * 2 });
       groups[segment.id].push({ outline, line, color: colors[leg.mode], weight });
