@@ -62,6 +62,32 @@ describe('travel backend integration', () => {
     expect(scheduleBody.points.every((point: { travelMinutesToNext: number }) => Number.isFinite(point.travelMinutesToNext))).toBe(true);
   });
 
+  it('keeps city landmark anchors while removing same-scenic-area route duplicates', async () => {
+    const request = { ...defaultTripRequest('襄阳'), freeText: '襄阳两天一夜，喜欢拍照和美食', interests: ['拍照', '美食'] as const };
+    const plan = generateTripPlan(request as never, null);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes('/api/attractions/search')) {
+        if (url.includes('keywords=古隆中')) return new Response(JSON.stringify({ items: [
+          { id: 'longzhong', name: '古隆中风景区', district: '襄城区', location: { lng: 112.04, lat: 31.99 }, photos: ['https://example.com/longzhong.jpg'] },
+          { id: 'wuhou', name: '古隆中武侯祠', district: '襄城区', location: { lng: 112.041, lat: 31.991 }, photos: ['https://example.com/wuhou.jpg'] },
+        ] }), { status: 200 });
+        if (url.includes('keywords=襄阳古城')) return new Response(JSON.stringify({ items: [{ id: 'old-city', name: '襄阳古城', district: '襄城区', location: { lng: 112.151, lat: 32.021 }, photos: ['https://example.com/old-city.jpg'] }] }), { status: 200 });
+        if (url.includes('keywords=中国唐城')) return new Response(JSON.stringify({ items: [{ id: 'tang-city', name: '中国唐城', district: '襄城区', location: { lng: 112.195, lat: 31.948 }, photos: ['https://example.com/tang-city.jpg'] }] }), { status: 200 });
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      }
+      if (url.endsWith('/api/ai/recommend')) return new Response(JSON.stringify({ data: { ranked: [{ id: 'wuhou', reason: '适合拍照', fitScore: 98 }] } }), { status: 200 });
+      if (url.endsWith('/api/restaurants/guide')) return new Response(JSON.stringify({ recommendations: [] }), { status: 200 });
+      if (url.endsWith('/api/ai/analyze')) return new Response(JSON.stringify({ data: { analysis: '襄阳地标路线。' } }), { status: 200 });
+      return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    const result = await enrichTripPlanWithBackend(plan, request as never);
+
+    expect(result.routePoints?.map((point) => point.name)).toEqual(['古隆中风景区', '襄阳古城', '中国唐城']);
+  });
+
   it('builds a city-scoped Dianping search link for a live AMap restaurant without a verified direct page', () => {
     expect(getDianpingSearchUrl('武汉', '湖边小馆')).toBe('https://www.dianping.com/search/keyword/16/0_%E6%B9%96%E8%BE%B9%E5%B0%8F%E9%A6%86');
     expect(getDianpingSearchUrl('长沙', '湘菜馆')).toContain('/search/keyword/0/0_');
