@@ -120,7 +120,7 @@ export function PlannerPage() {
           </div>
         </section>}
 
-      {resultMode && plan && <div className="mx-auto w-full max-w-none"><section ref={resultRef} className="space-y-3 scroll-mt-24">
+      {resultMode && plan && <div className="mx-auto w-full max-w-none"><section ref={resultRef} className="planner-result-shell space-y-3 scroll-mt-24">
             <div className="planner-result-toolbar flex flex-col justify-between gap-3 rounded-[1.25rem] bg-white/75 px-4 py-3 shadow-sm ring-1 ring-ink/5 backdrop-blur md:flex-row md:items-center md:px-5">
               <h2 className="font-display text-2xl font-black text-ink">{plan.route.title}</h2>
               <div className="flex flex-wrap gap-2">
