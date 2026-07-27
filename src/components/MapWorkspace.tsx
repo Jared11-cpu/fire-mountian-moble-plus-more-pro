@@ -99,9 +99,9 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof MapPin }> = [
   { id: "budget", label: "预算", icon: CircleDollarSign },
 ];
 const mobileSheetHeights: Record<MobileSheetStop, number> = {
-  peek: 64,
-  half: 42,
-  full: 20,
+  peek: 72,
+  half: 45,
+  full: 18,
 };
 
 export function getMobileSheetSnap(mapHeightPercent: number): MobileSheetStop {
@@ -390,7 +390,7 @@ export function MapWorkspace({
           aria-label="路线地图"
           className="mobile-map-pane relative min-w-0 overflow-hidden border-ink/10 lg:block lg:min-h-[620px] lg:border-r"
         >
-          <div className="absolute left-4 top-4 z-20 flex flex-wrap gap-2">
+          <div className="map-primary-controls absolute left-4 top-4 z-20 flex flex-wrap gap-2">
             <CommandButton
               icon={isReplanning ? Loader2 : RefreshCw}
               label={isReplanning ? "计算中" : "重新规划"}
