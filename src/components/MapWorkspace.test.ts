@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { baseRoutes } from '../data/routeData';
 import type { PlannedRoutePoint } from '../domain/trip';
 import type { TransportPlanResponse, TransportSegment } from '../services/transportService';
-import { addTransportClock, alignTransportDepartureTime, compactTravelTip, formatTransportDistance, getAmapRouteUrl, getBudgetUsageVisual, getDianpingShopDetailUrl, getHourlyChartScale, getPointDetailLinks, getPointPrimaryDetailLink, getPointServiceLinks, getRailwayStationTimetableUrl, getTransportLegPreview, getTransportLegStations, getTransportSegmentAriaLabel, getTransportSegmentCompactSummary, getVerifiedCtripDetailUrl, getXiaohongshuGuideUrl, isDirectCtripDetailUrl, normalizeActualStayMinutes, normalizeTravelMinutes, recalculateEditableTimeline } from './MapWorkspace';
+import { addTransportClock, alignTransportDepartureTime, compactTravelTip, formatTransportDistance, getAmapRouteUrl, getBudgetUsageVisual, getDianpingShopDetailUrl, getHourlyChartScale, getMobileSheetSnap, getPointDetailLinks, getPointPrimaryDetailLink, getPointServiceLinks, getRailwayStationTimetableUrl, getTransportLegPreview, getTransportLegStations, getTransportSegmentAriaLabel, getTransportSegmentCompactSummary, getVerifiedCtripDetailUrl, getXiaohongshuGuideUrl, isDirectCtripDetailUrl, normalizeActualStayMinutes, normalizeTravelMinutes, recalculateEditableTimeline } from './MapWorkspace';
 import { getFocusedTransportPath, getFocusedTransportSegmentPoints } from './RouteMap';
 
 describe('getPointServiceLinks', () => {
@@ -159,6 +159,14 @@ describe('normalizeActualStayMinutes', () => {
     expect(normalizeActualStayMinutes(-8)).toBe(0);
     expect(normalizeActualStayMinutes(1600)).toBe(1440);
     expect(normalizeActualStayMinutes('')).toBe(0);
+  });
+});
+
+describe('mobile trip sheet snapping', () => {
+  it('snaps the resizable map to peek, half, and full-detail stops', () => {
+    expect(getMobileSheetSnap(66)).toBe('peek');
+    expect(getMobileSheetSnap(43)).toBe('half');
+    expect(getMobileSheetSnap(18)).toBe('full');
   });
 });
 
