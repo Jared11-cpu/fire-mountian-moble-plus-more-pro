@@ -89,10 +89,20 @@ type Tab =
   | "food"
   | "budget";
 type MobileSheetStop = "peek" | "half" | "full";
-const tabs: Array<{ id: Tab; label: string; icon: typeof MapPin }> = [
+const tabs: Array<{
+  id: Tab;
+  label: string;
+  mobileLabel?: string;
+  icon: typeof MapPin;
+}> = [
   { id: "overview", label: "概览", icon: Sparkles },
   { id: "stops", label: "路线", icon: MapPin },
-  { id: "days", label: "行程记录", icon: CalendarDays },
+  {
+    id: "days",
+    label: "行程记录",
+    mobileLabel: "行程",
+    icon: CalendarDays,
+  },
   { id: "weather", label: "天气", icon: CloudSun },
   { id: "transport", label: "交通", icon: Bus },
   { id: "food", label: "美食", icon: Utensils },
@@ -335,7 +345,7 @@ export function MapWorkspace({
         role="tablist"
         aria-label="行程功能模块"
       >
-        {tabs.map(({ id, label, icon: Icon }) => (
+        {tabs.map(({ id, label, mobileLabel, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -346,7 +356,7 @@ export function MapWorkspace({
             className={tab === id ? "is-active" : ""}
           >
             <Icon aria-hidden="true" />
-            <span>{label}</span>
+            <span>{mobileLabel ?? label}</span>
           </button>
         ))}
       </div>

@@ -56,6 +56,8 @@ test('mobile result page keeps the map dominant and sheet usable', async ({ page
   expect(layout.mapHeight).toBeGreaterThan(580);
   expect(layout.sheetHeight).toBeGreaterThan(200);
   await expect(page.getByRole('tab')).toHaveCount(7);
+  const tabBoxes = await page.getByRole('tab').evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().toJSON()));
+  expect(tabBoxes.every((box) => box.left >= 0 && box.right <= 390)).toBe(true);
 
   await page.getByRole('button', { name: '展开概览详情' }).click();
   await page.screenshot({ path: 'output/playwright/mobile-redesign-half.png' });

@@ -489,7 +489,7 @@ body {
   .mobile-module-bar {
     display: flex;
     min-height: 64px;
-    gap: .35rem;
+    gap: .12rem;
     overflow-x: auto;
     padding: .55rem .6rem .65rem;
     background:
@@ -710,7 +710,7 @@ body {
 
   .mobile-module-bar {
     position: absolute;
-    z-index: 40;
+    z-index: 70;
     top: calc(max(.55rem, env(safe-area-inset-top)) + 60px);
     right: .65rem;
     left: .65rem;
@@ -718,26 +718,27 @@ body {
     gap: .35rem;
     border: 1px solid rgba(255,255,255,.7);
     border-radius: 1rem;
-    padding: .35rem;
+    padding: .25rem;
     background: rgba(255,253,248,.88);
     box-shadow: 0 10px 28px rgba(21,47,53,.12);
     backdrop-filter: blur(18px) saturate(1.25);
   }
 
   .mobile-module-bar button {
-    min-width: 62px;
+    min-width: 0;
+    flex: 1 1 0;
     min-height: 38px;
-    grid-template-columns: 15px auto;
+    grid-template-columns: 14px auto;
     place-content: center;
-    gap: .28rem;
+    gap: .12rem;
     border-radius: .75rem;
     color: rgba(21,47,53,.58);
-    font-size: .65rem;
+    font-size: .62rem;
   }
 
   .mobile-module-bar button svg {
-    width: 15px;
-    height: 15px;
+    width: 14px;
+    height: 14px;
   }
 
   .mobile-module-bar button.is-active {

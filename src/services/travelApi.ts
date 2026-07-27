@@ -102,6 +102,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   const rows: Array<Record<string, any>> = searches.flatMap((result) => result.status === 'fulfilled' ? result.value.items.map((item) => ({ ...item, sourceQuery: result.value.query })) : []);
   const candidates = [...new Map(rows.filter(validPoi).map((item) => [String(item.id), item])).values()]
     .filter((item) => !request.avoidPlaces.some((name) => String(item.name).includes(name)))
+    .filter((item) => isRequiredCandidate(item, required) || isWithinDestinationArea(item, request.destinationCity))
     .filter((item) => isRequiredCandidate(item, required) || !isLowValueUnphotographedPoi(item))
     .sort((left, right) => Number(hasPoiPhoto(right)) - Number(hasPoiPhoto(left)))
     .slice(0, 50);
@@ -152,6 +153,33 @@ function hasPoiPhoto(item: Record<string, any>) {
 function isLowValueUnphotographedPoi(item: Record<string, any>) {
   if (hasPoiPhoto(item)) return false;
   return /(?:党建|法治|廉政|休闲|文化|健身)广场$|停车场|游客集散点/u.test(String(item.name));
+}
+
+const destinationCenters: Record<string, { lng: number; lat: number; maxDistanceKm: number }> = {
+  武汉: { lng: 114.3055, lat: 30.5928, maxDistanceKm: 65 },
+  宜昌: { lng: 111.2865, lat: 30.6919, maxDistanceKm: 70 },
+  恩施: { lng: 109.4882, lat: 30.2722, maxDistanceKm: 75 },
+  荆州: { lng: 112.2397, lat: 30.3352, maxDistanceKm: 65 },
+  襄阳: { lng: 112.1224, lat: 32.009, maxDistanceKm: 70 },
+  黄石: { lng: 115.0389, lat: 30.1995, maxDistanceKm: 60 },
+};
+
+function isWithinDestinationArea(item: Record<string, any>, city: string) {
+  const center = destinationCenters[city];
+  if (!center) return true;
+  const lat = Number(item.location?.lat);
+  const lng = Number(item.location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  return haversineKm(center.lat, center.lng, lat, lng) <= center.maxDistanceKm;
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const deltaLat = radians(lat2 - lat1);
+  const deltaLng = radians(lng2 - lng1);
+  const value = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(deltaLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
 
 function normalizePlaceName(value: string) {
