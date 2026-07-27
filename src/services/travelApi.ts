@@ -99,9 +99,10 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
     黄石: ['黄石国家矿山公园', '磁湖风景区', '东方山风景区'],
   };
   const required = request.requestedPlaces.slice(0, 6);
+  const anchorTerms = cityAnchors[request.destinationCity] ?? [];
   const queryTerms = [...new Set([
     ...required,
-    ...(cityAnchors[request.destinationCity] ?? []),
+    ...anchorTerms,
     ...request.interests.map((item) => interestTerms[item]).filter(Boolean),
     '热门景点',
   ])].slice(0, 9);
@@ -122,6 +123,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   if (!candidates.length) return [];
 
   const requiredRows = required.map((query) => bestRequiredMatch(query, candidates)).filter(Boolean) as Array<Record<string, any>>;
+  const anchorRows = anchorTerms.map((query) => bestQueryMatch(query, candidates)).filter(Boolean) as Array<Record<string, any>>;
   const byId = new Map(candidates.map((item) => [String(item.id), item]));
   let ranked: Array<Record<string, any>> = [];
   try {
@@ -138,7 +140,8 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
       .filter(validPoi);
   } catch { ranked = []; }
   const targetCount = Math.min(10, Math.max(4, request.days * 3));
-  const selected = [...new Map([...requiredRows, ...ranked, ...candidates].map((item) => [String(item.id), item])).values()].slice(0, targetCount);
+  const ordered = [...new Map([...requiredRows, ...anchorRows, ...ranked, ...candidates].map((item) => [String(item.id), item])).values()];
+  const selected = pickGeographicallyDiverse(ordered, targetCount, required);
   return selected.map((item, index) => toRoutePoint(item, request, index));
 }
 
@@ -165,6 +168,25 @@ function hasPoiPhoto(item: Record<string, any>) {
 
 function isLowValuePoi(item: Record<string, any>) {
   return /(?:文化|党建|法治|廉政|清廉|禁毒|休闲|健身|远教)广场|社区(?:文化)?广场|村(?:级)?文化广场|村委会|管理办公室|停车场|游客集散点/u.test(String(item.name));
+}
+
+function bestQueryMatch(query: string, candidates: Array<Record<string, any>>) {
+  const direct = bestRequiredMatch(query, candidates.filter((item) => item.sourceQuery === query));
+  return direct ?? bestRequiredMatch(query, candidates);
+}
+
+function pickGeographicallyDiverse(candidates: Array<Record<string, any>>, targetCount: number, required: string[]) {
+  const selected: Array<Record<string, any>> = [];
+  for (const candidate of candidates) {
+    const requiredCandidate = isRequiredCandidate(candidate, required);
+    const separated = selected.every((chosen) => haversineKm(
+      Number(chosen.location.lat), Number(chosen.location.lng),
+      Number(candidate.location.lat), Number(candidate.location.lng),
+    ) >= 0.75);
+    if (requiredCandidate || separated) selected.push(candidate);
+    if (selected.length >= targetCount) return selected;
+  }
+  return selected;
 }
 
 const destinationCenters: Record<string, { lng: number; lat: number; maxDistanceKm: number }> = {
