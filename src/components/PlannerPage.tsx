@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, LocateFixed, Loader2, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { examples } from '../data/mockData';
 import { cityShowcaseIndex, cityShowcaseItems } from '../data/cityShowcaseData';
-import { DIETARY_RESTRICTIONS, INTERESTS, SPECIAL_NEEDS, TRAVELERS, type DietaryRestriction, type Interest, type SpecialNeed, type TravelerType } from '../domain/trip';
+import { DIETARY_RESTRICTIONS, INTERESTS, SPECIAL_NEEDS, TRAVELERS, todayIso, type DietaryRestriction, type Interest, type SpecialNeed, type TravelerType } from '../domain/trip';
 import { getBrowserLocation, resolveManualLocation } from '../services/locationService';
 import type { RoutePoint } from '../types/route';
 import { useTrip } from '../state/tripStore';
@@ -21,6 +21,10 @@ export function PlannerPage() {
   const resultRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLElement>(null);
   const selectedCity = cityShowcaseItems[cityShowcaseIndex(request.destinationCity)];
+  const today = todayIso();
+  const startDateIsPast = request.startDate < today;
+  const [pastDateConfirmedFor, setPastDateConfirmedFor] = useState('');
+  const pastDateConfirmed = pastDateConfirmedFor === request.startDate;
   const originConfirmed = request.origin.source !== 'manual' ? originInput === request.origin.name : Boolean(confirmedOriginName) && confirmedOriginName === originInput && request.origin.name === originInput;
 
   useEffect(() => { if (plan) setSelectedPointId((current) => plan.route.points.some((point) => point.id === current) ? current : plan.route.points[0]?.id); }, [plan]);
@@ -40,6 +44,7 @@ export function PlannerPage() {
   const createPlan = async () => {
     if (generating) return;
     if (!originConfirmed) { notify('请先确认手动出发地，确保已取得真实坐标。', 'error'); return; }
+    if (startDateIsPast && !pastDateConfirmed) { notify('出发日期已经过去，请先改为实际出发日期，或确认仍按原日期生成。', 'error'); return; }
     setGenerating(true);
     try {
       const next = await generateFromText(request.freeText);
@@ -116,6 +121,7 @@ export function PlannerPage() {
               </div>
             </section>
 
+            {startDateIsPast && <div className="planner-date-warning" role="alert"><p>出发日期 {request.startDate} 已经过去。天气、交通和营业信息都会按今天查询，按旧日期生成的行程可能对不上。</p><div><button type="button" onClick={() => updateRequest({ startDate: today })}>改为今天出发</button><button type="button" aria-pressed={pastDateConfirmed} onClick={() => setPastDateConfirmedFor(request.startDate)}>{pastDateConfirmed ? '已确认按原日期生成' : '仍按原日期生成'}</button></div></div>}
             <button type="button" disabled={generating || isGenerating} onClick={createPlan} className="planner-generate-button">{generating || isGenerating ? <Loader2 className="animate-spin" /> : <Sparkles />}{generating || isGenerating ? '正在生成最终 AI 分析…' : `生成我的${request.destinationCity}行程`}</button>
             {isGenerating && <GenerationProgress title="正在生成最终个性化方案" stage={generationStage} startedAt={generationStartedAt} onCancel={cancelGeneration} />}
           </div>

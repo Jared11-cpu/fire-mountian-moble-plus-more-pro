@@ -50,6 +50,7 @@ import {
   getVerifiedDianpingShopUrl,
   parseLocalDate,
   recalculateDailyTimeline,
+  todayIso,
   type BudgetItem,
   type FoodRecommendation,
   type PlannedRoutePoint,
@@ -79,6 +80,7 @@ import {
   type PointCover,
 } from "../services/pointImageService";
 import { getFocusedTransportPath, RouteMap } from "./RouteMap";
+import type { RoadPlanMetrics } from "../services/amapDriving";
 
 type Tab =
   | "overview"
@@ -160,6 +162,7 @@ export function MapWorkspace({
     notify,
   } = useTrip();
   const [tab, setTab] = useState<Tab>("overview");
+  const [roadMetrics, setRoadMetrics] = useState<RoadPlanMetrics | null>(null);
   const [mobileSheetStop, setMobileSheetStop] =
     useState<MobileSheetStop>("peek");
   const [mobileMapHeight, setMobileMapHeight] = useState(
@@ -331,11 +334,6 @@ export function MapWorkspace({
         },
       };
     });
-  const updateRouteDistance = (totalDistanceKm: number) =>
-    patchPlan((value) => ({
-      ...value,
-      route: { ...value.route, totalDistanceKm },
-    }));
   if (!tripPlan) return null;
 
   return (
@@ -417,6 +415,7 @@ export function MapWorkspace({
             activePointIndex={activePointIndex}
             navigating={navigating}
             onSelectPoint={handleMapSelect}
+            onRoadPlanChange={setRoadMetrics}
             mapOnly
           />
         </div>
@@ -462,7 +461,10 @@ export function MapWorkspace({
                 summary={plan.summary}
                 onSettings={updatePlanSettings}
                 onBudget={setBudgetTotal}
-                onDistance={updateRouteDistance}
+                roadMetrics={roadMetrics}
+                onTargetDistance={(targetDistanceKm) =>
+                  updatePlanSettings({ targetDistanceKm })
+                }
                 onDate={(startDate) => updateRequest({ startDate })}
               />
             )}
@@ -555,7 +557,8 @@ function Overview({
   summary,
   onSettings,
   onBudget,
-  onDistance,
+  roadMetrics,
+  onTargetDistance,
   onDate,
 }: {
   plan: NonNullable<ReturnType<typeof useTrip>["plan"]>;
@@ -563,12 +566,24 @@ function Overview({
   summary: string;
   onSettings: ReturnType<typeof useTrip>["updatePlanSettings"];
   onBudget: (total: number) => void;
-  onDistance: (distance: number) => void;
+  roadMetrics: RoadPlanMetrics | null;
+  onTargetDistance: (distance: number | undefined) => void;
   onDate: (date: string) => void;
 }) {
   const finalPoint = plan.route.points[plan.route.points.length - 1] as
     | PlannedRoutePoint
     | undefined;
+  // 实际距离只来自高德道路规划，用户只能设置期望上限，两者分开显示，避免地图与数字不一致。
+  const actualDistanceKm =
+    roadMetrics?.status === "planned" && Number.isFinite(roadMetrics.distanceKm)
+      ? roadMetrics.distanceKm
+      : undefined;
+  const targetDistanceKm = plan.settings.targetDistanceKm;
+  const overTarget =
+    actualDistanceKm !== undefined &&
+    targetDistanceKm !== undefined &&
+    actualDistanceKm > targetDistanceKm;
+  const startDateIsPast = plan.requestSnapshot.startDate < todayIso();
   return (
     <div className="space-y-4">
       <section className="workspace-dark-glass rounded-[1.65rem] p-5 text-white">
@@ -606,15 +621,43 @@ function Overview({
             onSettings({ targetDurationMinutes: Math.round(value * 60) })
           }
         />
+        <div
+          className="rounded-2xl bg-white p-4 shadow-sm"
+          aria-label="实际路线距离"
+        >
+          <span className="block text-xs font-black text-ink/50">
+            实际路线距离
+            <small className="ml-1.5 text-[9px] text-river">
+              {actualDistanceKm !== undefined
+                ? "高德道路"
+                : roadMetrics?.status === "loading"
+                  ? "规划中"
+                  : "估算"}
+            </small>
+          </span>
+          <span className="mt-2 block font-display text-xl font-black text-ink">
+            {actualDistanceKm ?? plan.route.totalDistanceKm}
+            <span className="ml-1 text-sm">km</span>
+          </span>
+        </div>
         <EditableMetric
-          label="路线距离"
-          value={plan.route.totalDistanceKm}
+          label="期望距离上限"
+          value={targetDistanceKm ?? 0}
           min={0}
           max={99999}
-          step={0.1}
+          step={1}
           suffix="km"
-          onCommit={onDistance}
+          onCommit={(value) => onTargetDistance(value > 0 ? value : undefined)}
         />
+        {overTarget && (
+          <p
+            className="col-span-2 rounded-xl border border-tower/20 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower"
+            role="status"
+          >
+            实际道路距离 {actualDistanceKm} km 超过期望的 {targetDistanceKm}{" "}
+            km，可以减少点位后重新生成。
+          </p>
+        )}
         <EditableMetric
           label="计划预算"
           value={plan.requestSnapshot.budget}
@@ -653,6 +696,11 @@ function Overview({
               className="focus-ring min-w-0 w-full bg-transparent text-sm font-black text-ink"
             />
           </span>
+          {startDateIsPast && (
+            <span className="mt-2 block text-xs font-bold leading-5 text-tower" role="status">
+              这个日期已经过去，天气与交通按今天查询，请改为实际出发日期。
+            </span>
+          )}
         </label>
       </div>
     </div>

@@ -1281,6 +1281,11 @@ button {
 .planner-thinking h2 { margin: 0; font-family: "Songti SC", "STSong", serif; font-size: 1.15rem; }
 .planner-thinking p { margin: 4px 0 0; color: rgba(16,25,29,.5); font-size: .76rem; }
 .generation-progress { display: block; }
+.planner-date-warning { margin-bottom: 14px; border: 1px solid rgba(180,83,9,.3); background: rgba(254,243,199,.6); padding: 14px 16px; color: #92400e; font-size: .85rem; font-weight: 700; line-height: 1.6; }
+.planner-date-warning p { margin: 0; }
+.planner-date-warning div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.planner-date-warning button { border: 1px solid rgba(146,64,14,.35); background: #fff; padding: 6px 12px; font-size: .8rem; font-weight: 800; color: #92400e; }
+.planner-date-warning button[aria-pressed="true"] { background: #92400e; color: #fff; }
 .generation-progress-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .generation-progress-cancel { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; border: 1px solid var(--brand-line); background: #fff; padding: 6px 12px; font-size: .8rem; font-weight: 800; color: rgba(16,25,29,.7); }
 .generation-progress-cancel:hover { color: #b42318; border-color: rgba(180,35,24,.35); }

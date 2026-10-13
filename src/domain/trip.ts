@@ -74,7 +74,7 @@ export type TripPlan = {
   requestSnapshot: TripRequest;
   content: TravelPlan;
   route: SmartRoute & { points: PlannedRoutePoint[] };
-  settings: { targetPointCount: number; targetDurationMinutes: number; departureTime: string; transportDepartureTime?: string };
+  settings: { targetPointCount: number; targetDurationMinutes: number; departureTime: string; transportDepartureTime?: string; targetDistanceKm?: number };
   budgetItems: BudgetItem[];
   dailyRecords: DailyRecord[];
   pointNotes: Record<string, string>;
