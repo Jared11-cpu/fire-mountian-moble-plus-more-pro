@@ -6,10 +6,11 @@ import { DIETARY_RESTRICTIONS, INTERESTS, SPECIAL_NEEDS, TRAVELERS, type Dietary
 import { getBrowserLocation, resolveManualLocation } from '../services/locationService';
 import type { RoutePoint } from '../types/route';
 import { useTrip } from '../state/tripStore';
+import { GenerationProgress } from './GenerationProgress';
 import { MapWorkspace } from './MapWorkspace';
 
 export function PlannerPage() {
-  const { request, plan, parsedTags, parseWarnings, isGenerating, isReplanning, updateRequest, parseText, generateFromText, replan, resetPlan, notify } = useTrip();
+  const { request, plan, parsedTags, parseWarnings, isGenerating, isReplanning, generationStage, generationStartedAt, updateRequest, parseText, generateFromText, replan, cancelGeneration, resetPlan, notify } = useTrip();
   const [resultMode, setResultMode] = useState(Boolean(plan));
   const [selectedPointId, setSelectedPointId] = useState<string | undefined>(plan?.route.points[0]?.id);
   const [locating, setLocating] = useState(false);
@@ -116,7 +117,7 @@ export function PlannerPage() {
             </section>
 
             <button type="button" disabled={generating || isGenerating} onClick={createPlan} className="planner-generate-button">{generating || isGenerating ? <Loader2 className="animate-spin" /> : <Sparkles />}{generating || isGenerating ? '正在生成最终 AI 分析…' : `生成我的${request.destinationCity}行程`}</button>
-            {isGenerating && !plan && <section className="planner-thinking" aria-live="polite"><Loader2 className="animate-spin" /><div><h2>正在生成最终个性化方案</h2><p>正在完成真实地点检索与千问分析；完成前不会显示规则占位结果。</p></div></section>}
+            {isGenerating && <GenerationProgress title="正在生成最终个性化方案" stage={generationStage} startedAt={generationStartedAt} onCancel={cancelGeneration} />}
           </div>
         </section>}
 
@@ -129,7 +130,7 @@ export function PlannerPage() {
               </div>
             </div>
             <MapWorkspace route={plan.route} plan={plan.content} selectedPointId={selectedPointId} activePointIndex={Math.max(0, plan.route.points.findIndex((item) => item.id === selectedPointId))} navigating={false} imageUrl={selectedCity.imageUrl} onSelectPoint={(point: RoutePoint) => setSelectedPointId(point.id)} onRegenerate={replan} onSimulateNavigation={() => notify('本功能仅演示路线顺序，不冒充实时导航。')} />
-            {isReplanning && <div className="fixed inset-0 z-[90] grid place-items-center bg-ink/25 backdrop-blur-sm"><div className="flex items-center gap-3 rounded-3xl bg-white px-6 py-5 font-black text-ink shadow-soft"><Loader2 className="h-5 w-5 animate-spin text-river" />正在生成最终 AI 分析…</div></div>}
+            {isReplanning && <div className="fixed inset-0 z-[90] grid place-items-center bg-ink/25 px-4 backdrop-blur-sm"><div className="w-full max-w-xl"><GenerationProgress title="正在重新生成 AI 方案" stage={generationStage} startedAt={generationStartedAt} onCancel={cancelGeneration} /></div></div>}
           </section></div>}
     </main>
   );

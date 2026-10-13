@@ -137,13 +137,38 @@ export async function scheduleItinerary(input, env) {
     travelMinutesToNext: Math.max(0, Math.min(720, Math.round(Number(point.travelMinutesToNext) || 0))),
     openingHours: nullableString(point.openingHours),
   }));
-  const result = await qwenJson(env, {
-    model: env.AI_RECOMMEND_MODEL || 'qwen-plus', temperature: 0.1,
-    system: '你是湖北旅行安全排程助手。必须只返回 JSON：{"departureTime":"HH:mm","items":[{"id":"原始id","day":1,"arrivalTime":"HH:mm","reason":"简短理由"}],"safetyNotes":[]}。只能使用输入 points 中的 id、day、停留时长、交通时长和已提供的 openingHours，不得编造营业时间或路线。每天必须独立排程，所有到达时间必须在 07:30-21:30，严禁 22:00-次日07:29 的夜间赶路；同一天必须严格按输入顺序递增，并为上一站停留和交通预留足够时间。老人、儿童或行动不便应优先安排更早结束。必须为每个输入点返回且只返回一项。',
-    user: JSON.stringify({ city: input.city || '', days: input.days || 1, travelerType: input.travelerType || '', specialNeeds: input.specialNeeds || [], preferredDepartureTime: input.departureTime || '08:30', points }),
-  });
-  return validateSchedule(result, points);
+  let result;
+  try {
+    result = await qwenJson(env, {
+      model: env.AI_RECOMMEND_MODEL || 'qwen-plus', temperature: 0.1,
+      system: '你是湖北旅行安全排程助手。必须只返回 JSON：{"departureTime":"HH:mm","items":[{"id":"原始id","day":1,"arrivalTime":"HH:mm","reason":"简短理由"}],"safetyNotes":[]}。只能使用输入 points 中的 id、day、停留时长、交通时长和已提供的 openingHours，不得编造营业时间或路线。每天必须独立排程，所有到达时间必须在 07:30-21:30，严禁 22:00-次日07:29 的夜间赶路；同一天必须严格按输入顺序递增，并为上一站停留和交通预留足够时间。老人、儿童或行动不便应优先安排更早结束。必须为每个输入点返回且只返回一项。',
+      user: JSON.stringify({ city: input.city || '', days: input.days || 1, travelerType: input.travelerType || '', specialNeeds: input.specialNeeds || [], preferredDepartureTime: input.departureTime || '08:30', points }),
+    });
+  } catch (error) {
+    if (error?.status === 503) throw error;
+    return ruleSchedule(points, input.departureTime, 'AI 排程暂未返回，已按停留与交通时长顺序排程。');
+  }
+  // AI 偶尔给出夜间或时间不足的排程；直接返回 502 会让前端重试并多等一轮，这里改为按规则校正后返回。
+  try { return { ...validateSchedule(result, points), source: 'ai' }; }
+  catch { return ruleSchedule(points, result?.departureTime || input.departureTime, 'AI 排程未通过安全校验，已按停留与交通时长自动校正。'); }
 }
+
+function ruleSchedule(points, preferredDeparture, note) {
+  const preferred = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(preferredDeparture || '')) ? timeMinutes(preferredDeparture) : 8 * 60 + 30;
+  const departure = Math.max(7 * 60 + 15, Math.min(10 * 60 + 30, preferred));
+  const safetyNotes = [note];
+  let cursor = 0;
+  let day = 0;
+  const items = points.map((point, index) => {
+    if (point.day !== day) { day = point.day; cursor = Math.max(7 * 60 + 30, departure + 15); }
+    const arrival = cursor;
+    cursor = arrival + point.stayMinutes + point.travelMinutesToNext;
+    if (arrival > 21 * 60 + 30 && !safetyNotes.some((text) => text.includes(`第${day}天`))) safetyNotes.push(`第${day}天点位较多，${point.name}将晚于 21:30 到达，建议减少点位。`);
+    return { id: point.id, day: point.day, arrivalTime: formatMinutes(Math.min(arrival, 23 * 60 + 59)), reason: index === 0 || points[index - 1].day !== point.day ? '当天第一站，按出发时间安排。' : '按上一站停留与交通时长顺延。' };
+  });
+  return { departureTime: formatMinutes(departure), items, safetyNotes, source: 'rules' };
+}
+function formatMinutes(value) { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }
 
 function sanitizeCandidate(item, index) {
   if (!item || typeof item !== 'object') throw httpError(400, `第 ${index + 1} 个候选地点无效`);

@@ -27,7 +27,7 @@ import {
   type TripPlan,
   type TripRequest,
 } from '../domain/trip';
-import { enrichTripPlanWithBackend, parseTravelRequestWithAi, type AiItinerarySchedule, type AiTravelRequest } from '../services/travelApi';
+import { enrichTripPlanWithBackend, parseTravelRequestWithAi, type AiItinerarySchedule, type AiTravelRequest, type GenerationStage } from '../services/travelApi';
 import type { JournalEntry, RoutePoint } from '../types/route';
 
 const STORAGE_KEY = 'chuyou-app-state-v2';
@@ -48,6 +48,8 @@ export type TripState = {
   isGenerating: boolean;
   isReplanning: boolean;
   replanSummary: string;
+  generationStage: GenerationStage | null;
+  generationStartedAt: number | null;
 };
 
 type Action =
@@ -60,6 +62,7 @@ type Action =
   | { type: 'generating'; value: boolean }
   | { type: 'replanning'; value: boolean }
   | { type: 'summary'; value: string }
+  | { type: 'stage'; stage: GenerationStage | null }
   | { type: 'hydrate'; state: TripState };
 
 function reducer(state: TripState, action: Action): TripState {
@@ -70,8 +73,9 @@ function reducer(state: TripState, action: Action): TripState {
     case 'journal': return { ...state, journalEntries: action.entries };
     case 'save': return { ...state, saveStatus: action.status };
     case 'toast': return { ...state, toast: action.toast };
-    case 'generating': return { ...state, isGenerating: action.value };
-    case 'replanning': return { ...state, isReplanning: action.value };
+    case 'generating': return { ...state, isGenerating: action.value, ...(action.value ? { generationStartedAt: Date.now() } : !state.isReplanning ? { generationStage: null, generationStartedAt: null } : {}) };
+    case 'replanning': return { ...state, isReplanning: action.value, ...(action.value ? { generationStartedAt: Date.now() } : !state.isGenerating ? { generationStage: null, generationStartedAt: null } : {}) };
+    case 'stage': return { ...state, generationStage: action.stage };
     case 'summary': return { ...state, replanSummary: action.value };
     case 'hydrate': return action.state;
     default: return state;
@@ -110,6 +114,8 @@ function readInitialState(): TripState {
     isGenerating: false,
     isReplanning: false,
     replanSummary: '',
+    generationStage: null,
+    generationStartedAt: null,
   };
 }
 
@@ -118,10 +124,11 @@ type RequestPatch = Partial<TripRequest> & { startDate?: string; endDate?: strin
 type TripContextValue = TripState & {
   updateRequest: (patch: RequestPatch) => boolean;
   selectCity: (city: CityName) => void;
-  parseText: (text?: string) => Promise<TripRequest>;
+  parseText: (text?: string, signal?: AbortSignal) => Promise<TripRequest>;
   generate: () => TripPlan;
   generateFromText: (text: string) => Promise<TripPlan>;
   replan: () => Promise<void>;
+  cancelGeneration: () => void;
   setPlan: (plan: TripPlan | null) => void;
   patchPlan: (updater: (plan: TripPlan) => TripPlan) => void;
   updatePlanSettings: (patch: Partial<TripPlan['settings']>) => void;
@@ -138,6 +145,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, readInitialState);
   const hydrated = useRef(false);
   const generationId = useRef(0);
+  const generationAbort = useRef<AbortController | null>(null);
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     const id = Date.now();
@@ -189,15 +197,16 @@ export function TripProvider({ children }: { children: ReactNode }) {
     notify(`已将统一目的地更新为${city}`, 'success');
   }, [notify, state.request.startDate]);
 
-  const parseText = useCallback(async (text = state.request.freeText) => {
+  const parseText = useCallback(async (text = state.request.freeText, signal?: AbortSignal) => {
     const local = parseTravelRequest(text, state.request);
     try {
-      const ai = await parseTravelRequestWithAi(text);
+      const ai = await parseTravelRequestWithAi(text, signal);
       const result = mergeAiTravelRequest(local, ai, text);
       dispatch({ type: 'parsed', request: result.request, tags: result.tags, warnings: result.warnings });
       notify(`千问已识别 ${result.tags.length} 项，请确认后生成。`, 'success');
       return result.request;
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error;
       dispatch({ type: 'parsed', request: local.request, tags: local.tags, warnings: [...local.warnings, 'AI 服务暂不可用，已使用本地规则识别。'] });
       notify(local.tags.length ? `已按本地规则识别 ${local.tags.length} 项。` : '未识别到新条件，请在表单中补充。', local.tags.length ? 'info' : 'error');
       return local.request;
@@ -212,14 +221,36 @@ export function TripProvider({ children }: { children: ReactNode }) {
 
   const generate = useCallback(() => generateForRequest(state.request), [generateForRequest, state.request]);
 
+  const startGeneration = useCallback(() => {
+    generationAbort.current?.abort();
+    const controller = new AbortController();
+    generationAbort.current = controller;
+    const id = ++generationId.current;
+    const onStage = (stage: GenerationStage) => { if (id === generationId.current) dispatch({ type: 'stage', stage }); };
+    return { id, signal: controller.signal, onStage };
+  }, []);
+
+  const cancelGeneration = useCallback(() => {
+    if (!generationAbort.current) return;
+    generationAbort.current.abort();
+    generationAbort.current = null;
+    generationId.current += 1;
+    dispatch({ type: 'generating', value: false });
+    dispatch({ type: 'replanning', value: false });
+    dispatch({ type: 'stage', stage: null });
+    dispatch({ type: 'summary', value: '已取消本次生成，当前方案保持不变。' });
+    notify('已取消生成，可修改条件后重新开始。');
+  }, [notify]);
+
   const generateFromText = useCallback(async (text: string) => {
-    const currentGeneration = ++generationId.current;
+    const { id: currentGeneration, signal, onStage } = startGeneration();
     dispatch({ type: 'generating', value: true });
+    dispatch({ type: 'stage', stage: 'parse' });
     dispatch({ type: 'summary', value: '正在识别个性化要求，并让千问从高德真实地点中生成最终方案…' });
     try {
-      const request = await parseText(text);
+      const request = await parseText(text, signal);
       const draft = generateTripPlan(request, state.plan);
-      const enrichment = await enrichTripPlanWithBackend(draft, request);
+      const enrichment = await enrichTripPlanWithBackend(draft, request, { signal, onStage });
       if (!enrichment.analysis || !enrichment.routePoints?.length) {
         throw new Error('真实地点或 AI 分析未完整返回，请稍后重试。');
       }
@@ -236,19 +267,19 @@ export function TripProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     } finally {
-      if (currentGeneration === generationId.current) dispatch({ type: 'generating', value: false });
+      if (currentGeneration === generationId.current) { generationAbort.current = null; dispatch({ type: 'generating', value: false }); }
     }
-  }, [notify, parseText, state.plan]);
+  }, [notify, parseText, startGeneration, state.plan]);
 
   const replan = useCallback(async () => {
     if (state.isReplanning || !state.plan) return;
-    const currentGeneration = ++generationId.current;
+    const { id: currentGeneration, signal, onStage } = startGeneration();
     dispatch({ type: 'replanning', value: true });
     dispatch({ type: 'summary', value: '正在重新查询真实地点并生成最终 AI 分析…' });
     try {
       const draft = generateTripPlan(state.request, state.plan);
       const difference = comparePlans(state.plan, draft);
-      const enrichment = await enrichTripPlanWithBackend(draft, state.request);
+      const enrichment = await enrichTripPlanWithBackend(draft, state.request, { signal, onStage });
       if (!enrichment.analysis || !enrichment.routePoints?.length) throw new Error('真实地点或 AI 分析未完整返回，请稍后重试。');
       const finalPlan = applyEnrichment(draft, enrichment);
       if (currentGeneration !== generationId.current) return;
@@ -261,9 +292,9 @@ export function TripProvider({ children }: { children: ReactNode }) {
         notify(error instanceof Error ? error.message : '重新分析失败，请稍后重试。', 'error');
       }
     } finally {
-      if (currentGeneration === generationId.current) dispatch({ type: 'replanning', value: false });
+      if (currentGeneration === generationId.current) { generationAbort.current = null; dispatch({ type: 'replanning', value: false }); }
     }
-  }, [notify, state.isReplanning, state.plan, state.request]);
+  }, [notify, startGeneration, state.isReplanning, state.plan, state.request]);
 
   const setPlan = useCallback((plan: TripPlan | null) => dispatch({ type: 'plan', plan }), []);
   const patchPlan = useCallback((updater: (plan: TripPlan) => TripPlan) => {
@@ -305,7 +336,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
     notify('方案已重置，真实手账和照片已保留。', 'success');
   }, [notify]);
 
-  const value = useMemo<TripContextValue>(() => ({ ...state, updateRequest, selectCity, parseText, generate, generateFromText, replan, setPlan, patchPlan, updatePlanSettings, updateBudgetItems, setBudgetTotal, setJournalEntries, resetPlan, notify }), [generate, generateFromText, notify, parseText, patchPlan, replan, resetPlan, selectCity, setBudgetTotal, setJournalEntries, setPlan, state, updateBudgetItems, updatePlanSettings, updateRequest]);
+  const value = useMemo<TripContextValue>(() => ({ ...state, updateRequest, selectCity, parseText, generate, generateFromText, replan, cancelGeneration, setPlan, patchPlan, updatePlanSettings, updateBudgetItems, setBudgetTotal, setJournalEntries, resetPlan, notify }), [cancelGeneration, generate, generateFromText, notify, parseText, patchPlan, replan, resetPlan, selectCity, setBudgetTotal, setJournalEntries, setPlan, state, updateBudgetItems, updatePlanSettings, updateRequest]);
 
   return <TripContext.Provider value={value}>{children}<GlobalStatus state={state} /></TripContext.Provider>;
 }

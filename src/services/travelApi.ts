@@ -24,9 +24,12 @@ export type AiItinerarySchedule = {
   safetyNotes: string[];
 };
 
-export async function parseTravelRequestWithAi(text: string): Promise<AiTravelRequest> {
+export type GenerationStage = 'parse' | 'places' | 'analysis';
+export type EnrichOptions = { signal?: AbortSignal; onStage?: (stage: GenerationStage) => void };
+
+export async function parseTravelRequestWithAi(text: string, signal?: AbortSignal): Promise<AiTravelRequest> {
   const response = await fetchTravelApi(apiUrl('/api/ai/parse-request'), {
-    method: 'POST',
+    method: 'POST', signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   });
@@ -35,15 +38,20 @@ export async function parseTravelRequestWithAi(text: string): Promise<AiTravelRe
   return payload.data as AiTravelRequest;
 }
 
-export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest): Promise<{ analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule }> {
-  const [places, foods] = await Promise.allSettled([recommendAttractions(request), recommendRestaurantsForRoute(request, plan.route.points)]);
+export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest, options: EnrichOptions = {}): Promise<{ analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule }> {
+  const { signal, onStage } = options;
+  onStage?.('places');
+  const [places, foods] = await Promise.allSettled([recommendAttractions(request, signal), recommendRestaurantsForRoute(request, plan.route.points, signal)]);
+  throwIfAborted(signal);
   const routePoints = places.status === 'fulfilled' ? places.value : [];
   const analysisRoute = routePoints.length ? [{ ...plan.route.startPoint, day: 1 }, ...routePoints] : plan.route.points;
   const timeline = calculateTimeline(analysisRoute, plan.settings.departureTime);
+  onStage?.('analysis');
   const [analysis, schedule] = await Promise.all([
-    analyzeTrip({ ...plan, route: { ...plan.route, points: timeline } }, request).catch(() => ''),
-    requestAiSchedule(timeline, request, plan.settings.departureTime).catch(() => undefined),
+    analyzeTrip({ ...plan, route: { ...plan.route, points: timeline } }, request, signal).catch(() => ''),
+    requestAiSchedule(timeline, request, plan.settings.departureTime, signal).catch(() => undefined),
   ]);
+  throwIfAborted(signal);
   const result: { analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule } = {};
   if (analysis) result.analysis = analysis;
   if (schedule) result.schedule = schedule;
@@ -53,9 +61,9 @@ export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripReq
   return result;
 }
 
-async function requestAiSchedule(points: PlannedRoutePoint[], request: TripRequest, departureTime: string): Promise<AiItinerarySchedule> {
+async function requestAiSchedule(points: PlannedRoutePoint[], request: TripRequest, departureTime: string, signal?: AbortSignal): Promise<AiItinerarySchedule> {
   const response = await fetchTravelApi(apiUrl('/api/ai/schedule'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       city: request.destinationCity, days: request.days, travelerType: request.travelerType,
       specialNeeds: request.specialNeeds, departureTime,
@@ -67,9 +75,9 @@ async function requestAiSchedule(points: PlannedRoutePoint[], request: TripReque
   return payload.data as AiItinerarySchedule;
 }
 
-async function analyzeTrip(plan: TripPlan, request: TripRequest) {
+async function analyzeTrip(plan: TripPlan, request: TripRequest, signal?: AbortSignal) {
   const response = await fetchTravelApi(apiUrl('/api/ai/analyze'), {
-    method: 'POST',
+    method: 'POST', signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       question: '请只依据 context，用一段简洁中文分析这个旅行方案如何匹配用户需求；不得补充 context 中没有的价格、营业时间、线路或地点。',
@@ -88,7 +96,7 @@ async function analyzeTrip(plan: TripPlan, request: TripRequest) {
   return typeof payload.data?.analysis === 'string' ? payload.data.analysis.trim() : '';
 }
 
-async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]> {
+async function recommendAttractions(request: TripRequest, signal?: AbortSignal): Promise<RoutePoint[]> {
   const interestTerms: Record<string, string> = { 自然风光: '景区', 历史文化: '博物馆', 拍照: '城市地标', Citywalk: '历史街区', 美食: '特色街区' };
   const cityAnchors: Record<string, string[]> = {
     宜昌: ['三峡大坝旅游区', '清江画廊旅游度假区', '滨江公园'],
@@ -109,7 +117,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   const searches = await Promise.allSettled(queryTerms.map(async (query) => {
     const params = new URLSearchParams({ city: request.destinationCity, keywords: query, pageSize: '10' });
     if (required.includes(query)) params.set('allTypes', '1');
-    const response = await fetchTravelApi(apiUrl(`/api/attractions/search?${params}`));
+    const response = await fetchTravelApi(apiUrl(`/api/attractions/search?${params}`), { signal });
     const payload = await readPayload(response, `“${query}”地点检索失败`);
     return { query, items: Array.isArray(payload.items) ? payload.items as Array<Record<string, any>> : [] };
   }));
@@ -128,7 +136,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
   let ranked: Array<Record<string, any>> = [];
   try {
     const rankingResponse = await fetchTravelApi(apiUrl('/api/ai/recommend'), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userPreferences: { prompt: request.freeText, city: request.destinationCity, days: request.days, interests: request.interests, travelerType: request.travelerType, specialNeeds: request.specialNeeds, requiredPlaces: required, avoidPlaces: request.avoidPlaces },
         candidates,
@@ -138,7 +146,7 @@ async function recommendAttractions(request: TripRequest): Promise<RoutePoint[]>
     ranked = (Array.isArray(rankingPayload.data?.ranked) ? rankingPayload.data.ranked : [])
       .map((rank: Record<string, any>) => ({ ...byId.get(String(rank.id)), recommendationReason: rank.reason, fitScore: rank.fitScore }))
       .filter(validPoi);
-  } catch { ranked = []; }
+  } catch { throwIfAborted(signal); ranked = []; }
   const targetCount = Math.min(10, Math.max(4, request.days * 3));
   const ordered = [...new Map([...requiredRows, ...anchorRows, ...ranked, ...candidates].map((item) => [String(item.id), item])).values()];
   const selected = pickGeographicallyDiverse(ordered, targetCount, required);
@@ -243,10 +251,10 @@ function toRoutePoint(item: Record<string, any>, request: TripRequest, index: nu
   };
 }
 
-export async function recommendRestaurantsForRoute(request: TripRequest, routePoints: RoutePoint[]): Promise<FoodRecommendation[]> {
+export async function recommendRestaurantsForRoute(request: TripRequest, routePoints: RoutePoint[], signal?: AbortSignal): Promise<FoodRecommendation[]> {
   const verifiedFoods = buildFoodRecommendations(request);
   const response = await fetchTravelApi(apiUrl('/api/restaurants/guide'), {
-    method: 'POST',
+    method: 'POST', signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       city: request.destinationCity,
@@ -354,11 +362,21 @@ async function fetchTravelApi(input: RequestInfo | URL, init?: RequestInit) {
       if (attempt === 1) throw error;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 350));
+    throwIfAborted(init?.signal ?? undefined);
   }
   if (lastResponse) return lastResponse;
   throw lastError instanceof Error ? lastError : new Error('旅行服务请求失败');
 }
 
+// 502/504 表示上游 AI 已失败或超时（单次最长约 25 秒），立即重试只会让用户再多等一轮。
 function isTransientApiStatus(status: number) {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
+  return status === 408 || status === 425 || status === 429 || status === 503;
+}
+
+export function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException('生成已取消', 'AbortError');
 }

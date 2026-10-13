@@ -124,8 +124,16 @@ describe('Sites API router', () => {
     const unsafe = { ...valid, items: valid.items.map((item, index) => index === 1 ? { ...item, arrivalTime: '00:20' } : item) };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(unsafe) } }] }), { status: 200 })));
     const rejected = await worker.fetch(request(), { DASHSCOPE_API_KEY: 'test' });
-    expect(rejected.status).toBe(502);
-    expect((await rejected.json()).error).toContain('安全时段');
+    expect(rejected.status).toBe(200);
+    const repaired = (await rejected.json()).data;
+    expect(repaired).toMatchObject({ departureTime: '07:45', source: 'rules' });
+    expect(repaired.items.map((item) => item.arrivalTime)).toEqual(['08:00', '09:30']);
+    expect(repaired.safetyNotes[0]).toContain('自动校正');
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(Object.assign(new Error('timeout'), { name: 'AbortError' })));
+    const timedOut = await worker.fetch(request(), { DASHSCOPE_API_KEY: 'test' });
+    expect(timedOut.status).toBe(200);
+    expect((await timedOut.json()).data).toMatchObject({ source: 'rules', departureTime: '08:30' });
   });
 
   it('searches explicit required places across all AMap POI types', async () => {
