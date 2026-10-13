@@ -9,9 +9,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onContinue: () => void;
+  onGenerate: () => void;
 };
 
-export function LandingPlannerDialog({ open, onClose, onContinue }: Props) {
+export function LandingPlannerDialog({ open, onClose, onContinue, onGenerate }: Props) {
   const { request, updateRequest } = useTrip();
   const [leaving, setLeaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -35,11 +36,12 @@ export function LandingPlannerDialog({ open, onClose, onContinue }: Props) {
 
   if (!open) return null;
 
-  const continuePlanning = () => {
+  const leaveTo = (next: () => void) => {
     if (leaving) return;
     setLeaving(true);
-    window.setTimeout(onContinue, 320);
+    window.setTimeout(next, 320);
   };
+  const canGenerate = request.freeText.trim().length > 0;
 
   return (
     <div className={`landing-planner-dialog ${leaving ? 'is-leaving' : ''}`} role="dialog" aria-modal="true" aria-labelledby="landing-planner-title">
@@ -86,10 +88,11 @@ export function LandingPlannerDialog({ open, onClose, onContinue }: Props) {
 
             {request.interests.length > 0 && <div className="landing-planner-interests"><span>已选兴趣</span>{request.interests.map((item) => <i key={item}><Check aria-hidden="true" />{item}</i>)}</div>}
 
-            <button type="button" className="landing-planner-continue" onClick={continuePlanning}>
-              <span><Sparkles aria-hidden="true" />进入 AI 深度规划</span><ArrowRight aria-hidden="true" />
+            <button type="button" className="landing-planner-continue" disabled={!canGenerate} onClick={() => leaveTo(onGenerate)}>
+              <span><Sparkles aria-hidden="true" />直接生成行程</span><ArrowRight aria-hidden="true" />
             </button>
-            <p className="landing-planner-note">进入后可继续调整出发地、日期、饮食与特殊需求</p>
+            <button type="button" className="landing-planner-secondary" onClick={() => leaveTo(onContinue)}>补充出发地、日期、饮食等更多条件</button>
+            <p className="landing-planner-note">{canGenerate ? '生成后仍可在行程页调整日期、预算和点位' : '先写一句旅行想法，即可直接生成'}</p>
           </div>
         </div>
       </section>

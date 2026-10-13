@@ -33,9 +33,11 @@ export function PlannerPage() {
     if (request.origin.source !== 'manual') setConfirmedOriginName(request.origin.name);
   }, [request.origin.name, request.origin.source]);
   useEffect(() => {
-    const start = () => {
+    const start = (event: Event) => {
       setResultMode(false);
       window.setTimeout(() => inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+      // 首页弹窗选择“直接生成”时，不再让用户在第二套表单里重复填写。
+      if ((event as CustomEvent<{ generate?: boolean }>).detail?.generate) void createPlanRef.current();
     };
     window.addEventListener('planner:start', start);
     return () => window.removeEventListener('planner:start', start);
@@ -55,6 +57,9 @@ export function PlannerPage() {
       setResultMode(false);
     } finally { setGenerating(false); }
   };
+
+  const createPlanRef = useRef(createPlan);
+  createPlanRef.current = createPlan;
 
   const locate = async () => {
     setLocating(true);

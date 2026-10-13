@@ -22,9 +22,22 @@ describe('routes and accessibility', () => {
     expect(await screen.findByRole('dialog', { name: /先说想法/ })).toBeInTheDocument();
     expect(screen.getByLabelText('这次旅行，你最在意什么？')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '宜昌' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /进入 AI 深度规划/ }));
+    await user.click(screen.getByRole('button', { name: /补充出发地、日期/ }));
     expect(await screen.findByRole('heading', { name: '懂你，也懂湖北' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '宜昌' })).not.toBeInTheDocument();
+  });
+
+  it('首页弹窗可以直接生成行程，不必再填第二套表单', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)));
+    const user = userEvent.setup();
+    renderRoute('/');
+    await user.click(screen.getByRole('button', { name: '以宜昌开始规划' }));
+    const generate = await screen.findByRole('button', { name: /直接生成行程/ });
+    await user.clear(screen.getByLabelText('这次旅行，你最在意什么？'));
+    expect(generate).toBeDisabled();
+    await user.type(screen.getByLabelText('这次旅行，你最在意什么？'), '宜昌两天，预算600，喜欢美食');
+    await user.click(generate);
+    expect(await screen.findByRole('heading', { name: '正在生成最终个性化方案' })).toBeInTheDocument();
   });
 
   it('直接打开 planner、journal、about 都恢复正确页面', () => {

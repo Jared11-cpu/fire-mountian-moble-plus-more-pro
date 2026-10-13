@@ -1434,6 +1434,9 @@ button {
 .landing-planner-continue span { display: inline-flex; align-items: center; gap: 8px; }
 .landing-planner-continue svg { width: 16px; height: 16px; }
 .landing-planner-continue:hover { background: #9f402f; transform: translateY(-1px); }
+.landing-planner-continue:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+.landing-planner-secondary { display: block; width: 100%; margin-top: 10px; border: 1px solid rgba(18,29,32,.18); background: transparent; padding: 12px 18px; color: rgba(18,29,32,.72); font-size: .78rem; font-weight: 700; }
+.landing-planner-secondary:hover { border-color: rgba(18,29,32,.4); color: rgba(18,29,32,.9); }
 .landing-planner-note { margin: 10px 0 0; color: rgba(18,29,32,.4); font-size: .64rem; text-align: center; }
 .home-manifesto { padding-top: clamp(92px, 10vw, 150px); padding-bottom: clamp(92px, 10vw, 150px); }
 .home-manifesto-heading {

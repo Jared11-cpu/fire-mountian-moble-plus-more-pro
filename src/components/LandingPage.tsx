@@ -5,7 +5,7 @@ import { CityShowcase } from './CityShowcase';
 import { LandingPlannerDialog } from './LandingPlannerDialog';
 
 type LandingPageProps = {
-  onStartPlanning: () => void;
+  onStartPlanning: (options?: { generate?: boolean }) => void;
 };
 
 export function LandingPage({ onStartPlanning }: LandingPageProps) {
@@ -31,7 +31,7 @@ export function LandingPage({ onStartPlanning }: LandingPageProps) {
   return (
     <main className="landing-editorial" aria-label="湖北六城首页">
       <CityShowcase city={request.destinationCity} interests={request.interests} onCityChange={selectCity} onInterestAdd={addInterest} onStartPlanning={() => setPlannerOpen(true)} externallyPaused={plannerOpen} />
-      <LandingPlannerDialog open={plannerOpen} onClose={closePlanner} onContinue={onStartPlanning} />
+      <LandingPlannerDialog open={plannerOpen} onClose={closePlanner} onContinue={() => onStartPlanning()} onGenerate={() => onStartPlanning({ generate: true })} />
     </main>
   );
 }
