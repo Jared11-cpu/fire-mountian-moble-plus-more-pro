@@ -31,6 +31,7 @@ export function BusinessPage() {
             <p className="text-sm font-black uppercase tracking-[0.2em] text-river">Business Console</p>
             <h1 className="mt-2 font-display text-4xl font-black text-ink md:text-5xl">民宿/景区 AI 商家后台</h1>
             <p className="mt-4 max-w-2xl text-ink/65">路线、欢迎语、提醒、脚本和客服话术一键生成。</p>
+            <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-tower/25 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower" role="note">演示功能：内容由本地规则模板生成，尚未接入千问与真实商家数据，仅用于展示产品形态。</p>
           </div>
           <div className="rounded-full bg-ink px-5 py-3 text-sm font-bold text-white shadow-soft">{toast}</div>
         </div>

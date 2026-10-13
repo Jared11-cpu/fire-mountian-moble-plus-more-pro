@@ -8,7 +8,8 @@ export function DashboardPage() {
         <div className="mb-8">
           <p className="text-sm font-black uppercase tracking-[0.2em] text-river">Tourism Data OS</p>
           <h1 className="mt-2 font-display text-4xl font-black text-ink md:text-5xl">城市文旅数据看板</h1>
-          <p className="mt-4 max-w-2xl text-ink/65">模拟需求洞察、预算分布与传播关键词。</p>
+          <p className="mt-4 max-w-2xl text-ink/65">需求洞察、预算分布与传播关键词。</p>
+          <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-tower/25 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower" role="note">演示数据：以下数字均为内置模拟数据，不代表真实客流或用户统计。</p>
         </div>
 
         <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
