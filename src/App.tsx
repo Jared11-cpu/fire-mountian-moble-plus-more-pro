@@ -31,11 +31,11 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const enterPlanning = () => {
+  const enterPlanning = ({ generate = false }: { generate?: boolean } = {}) => {
     setPlan(null);
     if (page !== 'planner') navigate(routeFor.planner);
     window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('planner:start'));
+      window.dispatchEvent(new CustomEvent('planner:start', { detail: { generate } }));
       document.getElementById('planner-ai-entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, page === 'planner' ? 0 : 80);
   };

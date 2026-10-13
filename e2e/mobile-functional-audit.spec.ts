@@ -167,7 +167,7 @@ test('mobile home navigation, planning dialog and journal CRUD remain operable',
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByLabel('首页规划天数').fill('3');
   await page.getByLabel('首页规划预算').fill('900');
-  await page.getByRole('button', { name: /进入 AI 深度规划/ }).click();
+  await page.getByRole('button', { name: /补充出发地、日期/ }).click();
   await expect(page).toHaveURL(/#\/planner$/);
   await expect(page.getByLabel('天数')).toHaveValue('3');
   await expect(page.getByLabel('预算（元）')).toHaveValue('900');
