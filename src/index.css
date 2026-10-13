@@ -1280,6 +1280,20 @@ button {
 .planner-thinking > svg { color: var(--river-blue); }
 .planner-thinking h2 { margin: 0; font-family: "Songti SC", "STSong", serif; font-size: 1.15rem; }
 .planner-thinking p { margin: 4px 0 0; color: rgba(16,25,29,.5); font-size: .76rem; }
+.generation-progress { display: block; }
+.generation-progress-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.generation-progress-cancel { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; border: 1px solid var(--brand-line); background: #fff; padding: 6px 12px; font-size: .8rem; font-weight: 800; color: rgba(16,25,29,.7); }
+.generation-progress-cancel:hover { color: #b42318; border-color: rgba(180,35,24,.35); }
+.generation-progress-cancel svg { width: 14px; height: 14px; }
+.generation-progress-steps { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.generation-progress-steps li { display: flex; align-items: center; gap: 10px; color: rgba(16,25,29,.4); }
+.generation-progress-steps li[data-state="active"], .generation-progress-steps li[data-state="done"] { color: var(--brand-ink, #10191d); }
+.generation-progress-steps strong { display: block; font-size: .9rem; }
+.generation-progress-steps small { display: block; font-size: .72rem; opacity: .6; }
+.generation-progress-icon { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; border: 1px solid var(--brand-line); border-radius: 999px; font-size: .75rem; font-weight: 800; }
+.generation-progress-icon svg { width: 14px; height: 14px; color: var(--river-blue); }
+.generation-progress-steps li[data-state="done"] .generation-progress-icon { background: var(--river-blue); border-color: var(--river-blue); }
+.generation-progress-steps li[data-state="done"] .generation-progress-icon svg { color: #fff; }
 
 /* Homepage — one cinematic frame, no scroll-led continuation */
 .landing-editorial {

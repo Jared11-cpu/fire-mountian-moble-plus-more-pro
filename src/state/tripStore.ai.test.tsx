@@ -12,9 +12,11 @@ vi.mock('../services/travelApi', () => ({
 }));
 
 function Harness() {
-  const { request, plan, isGenerating, generateFromText } = useTrip();
+  const { request, plan, isGenerating, generationStage, generateFromText, cancelGeneration } = useTrip();
   return <div>
     <output data-testid="generating">{String(isGenerating)}</output>
+    <output data-testid="stage">{generationStage ?? ''}</output>
+    <button onClick={cancelGeneration}>取消</button>
     <output data-testid="source">{plan?.generationSource ?? 'none'}</output>
     <output data-testid="summary">{plan?.content.summary ?? ''}</output>
     <output data-testid="departure">{plan?.settings.departureTime ?? ''}</output>
@@ -64,6 +66,25 @@ describe('AI plan publication', () => {
     expect(screen.getByTestId('departure')).toHaveTextContent('07:45');
     expect(screen.getByTestId('arrival')).toHaveTextContent('15:00');
     expect(request.destinationCity).toBe('武汉');
+  });
+
+  it('reports stages and lets the user cancel without publishing a plan', async () => {
+    let seenSignal: AbortSignal | undefined;
+    vi.mocked(enrichTripPlanWithBackend).mockImplementation((_plan, _request, options) => {
+      seenSignal = options?.signal;
+      options?.onStage?.('places');
+      return new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('生成已取消', 'AbortError'))));
+    });
+    render(<TripProvider><Harness /></TripProvider>);
+
+    await userEvent.click(screen.getByText('生成最终方案'));
+    await waitFor(() => expect(screen.getByTestId('stage')).toHaveTextContent('places'));
+    await userEvent.click(screen.getByText('取消'));
+
+    await waitFor(() => expect(screen.getByTestId('generating')).toHaveTextContent('false'));
+    expect(seenSignal?.aborted).toBe(true);
+    expect(screen.getByTestId('stage')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('source')).toHaveTextContent('none');
   });
 
   it('keeps the city explicitly written by the user when AI returns another supported city', async () => {
