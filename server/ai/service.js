@@ -29,6 +29,10 @@ export async function scheduleItinerary(input, env) {
   return provider(env).scheduleItinerary(input, env);
 }
 
+export async function businessCopy(input, env) {
+  return provider(env).businessCopy(input, env);
+}
+
 function provider(env) {
   const name = aiProvider(env);
   if (name === 'qwen') return qwen;

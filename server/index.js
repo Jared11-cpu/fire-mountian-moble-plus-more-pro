@@ -1,5 +1,6 @@
 import { aiConfigured, aiProvider, customAnalysis, extractTravelRequest, rankCandidates, scheduleItinerary, transportAdvice } from './ai/service.js';
 import { amapConfigured, forwardGeocode, planRoute, realtimeTransitQuery, reverseGeocode, searchPois, trafficStatus, transitPlan } from './amap/service.js';
+import { businessPlan } from './guide/business.js';
 import { recommendPlaces } from './guide/recommend.js';
 import { corsHeaders, errorResponse, isAllowedOrigin, json, readJson } from './http.js';
 
@@ -53,6 +54,7 @@ async function handleApi(request, env, url, cors) {
   if (key === 'GET /api/location/geocode') return json(await forwardGeocode(env, url.searchParams), 200, shortCache(cors));
   if (key === 'POST /api/restaurants/guide') return json(await recommendPlaces(env, await readJson(request, 256_000), 'restaurant'), 200, noStore(cors));
   if (key === 'POST /api/shops/guide') return json(await recommendPlaces(env, await readJson(request, 256_000), 'shop'), 200, noStore(cors));
+  if (key === 'POST /api/business/plan') return json(await businessPlan(env, await readJson(request, 32_000)), 200, noStore(cors));
   if (key === 'POST /api/guide/recommend') return json(await recommendPlaces(env, await readJson(request, 256_000)), 200, noStore(cors));
 
   if (key === 'POST /api/route/plan') return json(await planRoute(env, await readJson(request, 128_000)), 200, shortCache(cors));
