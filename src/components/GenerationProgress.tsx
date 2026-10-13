@@ -4,8 +4,8 @@ import type { GenerationStage } from '../services/travelApi';
 
 const STEPS: Array<{ stage: GenerationStage; label: string; hint: string }> = [
   { stage: 'parse', label: '理解你的需求', hint: '千问识别城市、天数、预算与兴趣' },
-  { stage: 'places', label: '检索真实地点', hint: '高德查询景点与沿途餐厅，千问排序' },
-  { stage: 'analysis', label: '安排时间并分析', hint: '安全排程与方案匹配度分析' },
+  { stage: 'places', label: '检索真实景点', hint: '高德查询候选景点，千问排序' },
+  { stage: 'analysis', label: '餐厅、排程与预算分析', hint: '沿最终路线找餐厅，核对预算与兴趣' },
 ];
 
 type Props = {

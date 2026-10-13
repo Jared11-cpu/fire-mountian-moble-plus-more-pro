@@ -53,6 +53,7 @@ export type FoodRecommendation = {
   name: string;
   area: string;
   priceRange: string;
+  averageCostPerPerson?: number;
   businessStatus: '非实时，出发前核验';
   tags: string[];
   dianpingUrl: string;
