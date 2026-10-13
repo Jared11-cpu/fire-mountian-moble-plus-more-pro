@@ -88,6 +88,35 @@ describe('travel backend integration', () => {
     expect(result.routePoints?.map((point) => point.name)).toEqual(['古隆中风景区', '襄阳古城', '中国唐城']);
   });
 
+  it('searches restaurants along the final route and sends food prices and budget to the analysis', async () => {
+    const request = { ...defaultTripRequest('宜昌'), freeText: '宜昌两天一夜，预算600元，喜欢美食', budget: 600, days: 2, interests: ['美食'] as const };
+    const plan = generateTripPlan(request as never, null);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/attractions/search')) return new Response(JSON.stringify({ items: [{ id: 'dam', name: '三峡大坝旅游区', district: '夷陵区', location: { lng: 111.0, lat: 30.82 }, photos: [] }] }), { status: 200 });
+      if (url.endsWith('/api/ai/recommend')) return new Response(JSON.stringify({ data: { status: 'ok', ranked: [], warnings: [] } }), { status: 200 });
+      if (url.endsWith('/api/restaurants/guide')) return new Response(JSON.stringify({ recommendations: [
+        { id: 'r1', name: '坝区农家菜', averageCost: 40, nearestRoutePoint: { name: '三峡大坝旅游区' }, routeDistanceMeters: 600 },
+        { id: 'r2', name: '江边烧烤', averageCost: 60, nearestRoutePoint: { name: '三峡大坝旅游区' }, routeDistanceMeters: 900 },
+        { id: 'r3', name: '凉虾小铺', averageCost: 15, nearestRoutePoint: { name: '三峡大坝旅游区' }, routeDistanceMeters: 300 },
+      ] }), { status: 200 });
+      if (url.endsWith('/api/ai/analyze')) return new Response(JSON.stringify({ data: { analysis: '预算够用，美食需求已满足。' } }), { status: 200 });
+      return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    const result = await enrichTripPlanWithBackend(plan, request as never);
+
+    expect(result.foods?.map((food) => food.averageCostPerPerson)).toEqual([40, 60, 15]);
+    const bodyOf = (path: string) => JSON.parse(String((fetcher.mock.calls.find((call) => String(call[0]).endsWith(path)) as unknown as [string, RequestInit])[1].body));
+    const restaurantBody = bodyOf('/api/restaurants/guide');
+    expect(restaurantBody.routePoints.map((point: { name: string }) => point.name)).toContain('三峡大坝旅游区');
+    expect(restaurantBody.preferences.budgetPerPerson).toBe(42);
+    const analysis = bodyOf('/api/ai/analyze').context;
+    expect(analysis.foods).toHaveLength(3);
+    expect(analysis.budget.food).toMatchObject({ allocation: 168, mealCount: 4, medianCostPerMeal: 40, estimatedSpend: 160, withinAllocation: true });
+  });
+
   it('builds a city-scoped Dianping search link for a live AMap restaurant without a verified direct page', () => {
     expect(getDianpingSearchUrl('武汉', '湖边小馆')).toBe('https://www.dianping.com/search/keyword/16/0_%E6%B9%96%E8%BE%B9%E5%B0%8F%E9%A6%86');
     expect(getDianpingSearchUrl('长沙', '湘菜馆')).toContain('/search/keyword/0/0_');

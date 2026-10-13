@@ -41,21 +41,25 @@ export async function parseTravelRequestWithAi(text: string, signal?: AbortSigna
 export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest, options: EnrichOptions = {}): Promise<{ analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule }> {
   const { signal, onStage } = options;
   onStage?.('places');
-  const [places, foods] = await Promise.allSettled([recommendAttractions(request, signal), recommendRestaurantsForRoute(request, plan.route.points, signal)]);
+  const routePoints = await recommendAttractions(request, signal).catch((error) => { if (isAbortError(error)) throw error; return [] as RoutePoint[]; });
   throwIfAborted(signal);
-  const routePoints = places.status === 'fulfilled' ? places.value : [];
   const analysisRoute = routePoints.length ? [{ ...plan.route.startPoint, day: 1 }, ...routePoints] : plan.route.points;
   const timeline = calculateTimeline(analysisRoute, plan.settings.departureTime);
+  const analysisPlan = { ...plan, route: { ...plan.route, points: timeline } };
   onStage?.('analysis');
-  const [analysis, schedule] = await Promise.all([
-    analyzeTrip({ ...plan, route: { ...plan.route, points: timeline } }, request, signal).catch(() => ''),
+  // 餐厅沿最终路线检索，再把人均消费与预算分配一起交给分析，AI 才能判断预算与美食需求是否满足。
+  const foodsAndAnalysis = recommendRestaurantsForRoute(request, timeline, signal)
+    .catch(() => [] as FoodRecommendation[])
+    .then(async (foods) => ({ foods, analysis: await analyzeTrip(analysisPlan, request, foods, signal).catch(() => '') }));
+  const [{ foods, analysis }, schedule] = await Promise.all([
+    foodsAndAnalysis,
     requestAiSchedule(timeline, request, plan.settings.departureTime, signal).catch(() => undefined),
   ]);
   throwIfAborted(signal);
   const result: { analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule } = {};
   if (analysis) result.analysis = analysis;
   if (schedule) result.schedule = schedule;
-  if (foods.status === 'fulfilled' && foods.value.length) result.foods = foods.value;
+  if (foods.length) result.foods = foods;
   if (routePoints.length) result.routePoints = routePoints;
   if (!result.analysis && !result.foods && !result.routePoints) throw new Error('AI 与高德个性化服务暂时不可用');
   return result;
@@ -75,12 +79,12 @@ async function requestAiSchedule(points: PlannedRoutePoint[], request: TripReque
   return payload.data as AiItinerarySchedule;
 }
 
-async function analyzeTrip(plan: TripPlan, request: TripRequest, signal?: AbortSignal) {
+async function analyzeTrip(plan: TripPlan, request: TripRequest, foods: FoodRecommendation[], signal?: AbortSignal) {
   const response = await fetchTravelApi(apiUrl('/api/ai/analyze'), {
     method: 'POST', signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      question: '请只依据 context，用一段简洁中文分析这个旅行方案如何匹配用户需求；不得补充 context 中没有的价格、营业时间、线路或地点。',
+      question: '请只依据 context，用一段简洁中文分析这个旅行方案如何匹配用户需求，并明确回答两点：预算是否够用（依据 context.budget 的分配额度与餐饮估算），兴趣是否被满足（美食兴趣依据 context.foods 中的真实餐厅与人均消费）。不得补充 context 中没有的价格、营业时间、线路或地点；只有 context 确实缺少的价格（如门票）才写入 dataGaps。',
       context: {
         request: {
           city: request.destinationCity, days: request.days, budget: request.budget, interests: request.interests,
@@ -89,11 +93,44 @@ async function analyzeTrip(plan: TripPlan, request: TripRequest, signal?: AbortS
         },
         route: plan.route.points.map((point) => ({ name: point.name, arrivalTime: point.time, stayMinutes: point.stayMinutes, estimatedCost: point.estimatedCost ?? null })),
         transportSuggestion: plan.route.transportSuggestion,
+        budget: buildBudgetContext(plan, request, foods),
+        foods: foods.slice(0, 8).map((food) => ({ name: food.name, averageCostPerPerson: food.averageCostPerPerson ?? null, nearestRoutePoint: food.nearestPointName ?? null, distanceMeters: food.distanceMeters ?? null })),
       },
     }),
   });
   const payload = await readPayload(response, 'AI 方案分析失败');
   return typeof payload.data?.analysis === 'string' ? payload.data.analysis.trim() : '';
+}
+
+export function buildBudgetContext(plan: TripPlan, request: TripRequest, foods: FoodRecommendation[]) {
+  const allocation = plan.content.budget.map(({ item, amount, note }) => ({ item, amount, note }));
+  const foodAllocation = allocation.find((row) => row.item === '餐饮')?.amount ?? null;
+  const prices = foods.map((food) => food.averageCostPerPerson).filter((value): value is number => Number.isFinite(value) && Number(value) > 0).sort((left, right) => left - right);
+  const mealCount = request.days * 2;
+  const medianCostPerMeal = prices.length ? prices[Math.floor(prices.length / 2)] : null;
+  const estimatedFoodSpend = medianCostPerMeal === null ? null : medianCostPerMeal * mealCount;
+  return {
+    totalBudgetPerPerson: request.budget,
+    days: request.days,
+    allocationNote: '分配额度按总预算比例拆分，是计划额度而不是实际价格。',
+    allocation,
+    food: {
+      allocation: foodAllocation,
+      mealCount,
+      pricedRestaurantCount: prices.length,
+      cheapestCostPerMeal: prices[0] ?? null,
+      medianCostPerMeal,
+      estimatedSpend: estimatedFoodSpend,
+      withinAllocation: estimatedFoodSpend === null || foodAllocation === null ? null : estimatedFoodSpend <= foodAllocation,
+      estimateNote: `按 ${mealCount} 顿正餐 × 路线周边真实餐厅人均中位数估算。`,
+    },
+    knownTicketCosts: plan.route.points.filter((point) => Number.isFinite(point.estimatedCost)).map((point) => ({ name: point.name, cost: point.estimatedCost })),
+  };
+}
+
+export function mealBudgetPerPerson(request: TripRequest) {
+  const foodShare = Math.round(request.budget * 0.28);
+  return Math.max(20, Math.round(foodShare / Math.max(1, request.days * 2)));
 }
 
 async function recommendAttractions(request: TripRequest, signal?: AbortSignal): Promise<RoutePoint[]> {
@@ -265,7 +302,8 @@ export async function recommendRestaurantsForRoute(request: TripRequest, routePo
         .filter((point) => Number.isFinite(point.lng) && Number.isFinite(point.lat))
         .map((point) => ({ id: point.id, name: point.name, lng: point.lng, lat: point.lat, day: point.day ?? 1 })),
       preferences: {
-        budgetPerPerson: Math.max(1, Math.round(request.budget / Math.max(1, request.days))),
+        budgetPerPerson: mealBudgetPerPerson(request),
+        budgetNote: 'budgetPerPerson 是每人每顿正餐的预算',
         interests: request.interests,
         dietaryNeeds: request.dietaryRestrictions,
         mobility: request.specialNeeds.includes('行动不便') ? '少步行' : null,
@@ -292,6 +330,7 @@ export async function recommendRestaurantsForRoute(request: TripRequest, routePo
       name: String(item.name),
       area: [item.district, item.address].filter(Boolean).join(' · ') || request.destinationCity,
       priceRange: Number.isFinite(Number(item.averageCost)) ? `约 ¥${Number(item.averageCost)}/人` : '消费以商家最新信息为准',
+      ...(Number(item.averageCost) > 0 ? { averageCostPerPerson: Number(item.averageCost) } : {}),
       businessStatus: '非实时，出发前核验' as const,
       tags,
       dianpingUrl,
