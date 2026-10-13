@@ -112,6 +112,29 @@ describe('Sites API router', () => {
     expect(fetcher.mock.calls[1][0]).toContain('city2=0731');
   });
 
+  it('builds a business plan from AMap-verified places and keeps food lines to real restaurants', async () => {
+    const copy = {
+      route: ['09:30 出发去三峡大坝', '12:00 午餐', '14:30 滨江公园', '18:00 返回'], welcome: '欢迎入住', reminders: ['提前预约大坝'],
+      food: ['杜记凉虾，人均 15 元', '编造的网红餐厅'], videoScript: ['镜头 1'], redbook: '江景民宿', replies: ['可以帮您预约'],
+    };
+    const fetcher = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes('/v5/place/text') && url.includes(encodeURIComponent('三峡大坝'))) return new Response(JSON.stringify({ status: '1', pois: [{ id: 'dam', name: '三峡大坝旅游区', adname: '夷陵区', location: '111.00,30.82' }] }), { status: 200 });
+      if (url.includes('/v5/place/text')) return new Response(JSON.stringify({ status: '1', pois: [] }), { status: 200 });
+      if (url.includes('/v5/place/around')) return new Response(JSON.stringify({ status: '1', pois: [{ id: 'r1', name: '杜记凉虾', adname: '夷陵区', location: '111.01,30.82', business: { cost: '15' } }] }), { status: 200 });
+      if (url.includes('/chat/completions')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(copy) } }] }), { status: 200 });
+      return new Response('{}', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const response = await worker.fetch(new Request('https://example.test/api/business/plan', { method: 'POST', body: JSON.stringify({ name: '西陵江景民宿', city: '宜昌', spots: '三峡大坝，不存在的景点', target: '情侣' }) }), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ source: 'amap+qwen', unmatchedSpots: ['不存在的景点'], food: ['杜记凉虾，人均 15 元'] });
+    expect(body.facts.spots[0].name).toBe('三峡大坝旅游区');
+    const prompt = JSON.parse(fetcher.mock.calls.find((call) => String(call[0]).includes('/chat/completions'))[1].body).messages[1].content;
+    expect(prompt).toContain('杜记凉虾');
+  });
+
   it('accepts only complete daytime AI schedules with enough travel time', async () => {
     const valid = { departureTime: '07:45', items: [{ id: 'start', day: 1, arrivalTime: '08:00', reason: '安全抵达起点' }, { id: 'museum', day: 1, arrivalTime: '10:00', reason: '上午参观' }], safetyNotes: ['21:30 前结束'] };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 })));

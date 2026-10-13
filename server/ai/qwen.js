@@ -170,6 +170,31 @@ function ruleSchedule(points, preferredDeparture, note) {
 }
 function formatMinutes(value) { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }
 
+export async function businessCopy(facts, env) {
+  const result = await qwenJson(env, {
+    model: env.AI_RECOMMEND_MODEL || 'qwen-plus', temperature: 0.5,
+    system: '你是湖北文旅商家的住客服务文案助手。必须只返回 JSON：{"route":["4条带时间的周边一日游安排"],"welcome":"欢迎语","reminders":["3-5条入住提醒"],"food":["3-5条周边美食推荐"],"videoScript":["4个短视频镜头"],"redbook":"小红书种草文案","replies":["3-5条客服自动回复"]}。景点只能使用 facts.spots 中的名称，餐厅只能使用 facts.restaurants 中的名称；不得编造价格、营业时间、电话或门票，facts 中有的人均消费可以引用。文案要贴合 facts.target 客群。',
+    user: JSON.stringify({ facts: copyFacts(facts) }),
+  });
+  const restaurantNames = (facts.restaurants || []).map((item) => item.name);
+  const food = stringArray(result.food, 5).filter((line) => restaurantNames.some((name) => line.includes(name)));
+  return {
+    route: requireLines(result.route, '一日游路线', 6),
+    welcome: assertText(result.welcome, '欢迎语', { max: 600 }),
+    reminders: requireLines(result.reminders, '入住提醒', 6),
+    food: food.length ? food : (facts.restaurants || []).slice(0, 4).map((item) => `${item.name}${item.averageCost ? `，人均约 ${item.averageCost} 元` : ''}${item.district ? `（${item.district}）` : ''}`),
+    videoScript: requireLines(result.videoScript, '短视频脚本', 6),
+    redbook: assertText(result.redbook, '种草文案', { max: 1200 }),
+    replies: requireLines(result.replies, '客服回复', 6),
+  };
+}
+
+function requireLines(value, label, max) {
+  const lines = stringArray(value, max).map((line) => line.slice(0, 300));
+  if (!lines.length) throw httpError(502, `AI 没有返回${label}`);
+  return lines;
+}
+
 function sanitizeCandidate(item, index) {
   if (!item || typeof item !== 'object') throw httpError(400, `第 ${index + 1} 个候选地点无效`);
   const id = assertText(item.id, '候选地点 id', { max: 200 });
