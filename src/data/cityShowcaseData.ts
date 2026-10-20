@@ -39,7 +39,7 @@ const cityByName = new Map(cities.map((city) => [city.name, city]));
 const localShowcaseAssets: Partial<Record<CityName, { desktop: string; mobile: string }>> = {
   恩施: { desktop: 'enshi-desktop.jpg', mobile: 'enshi-mobile.jpg' },
   荆州: { desktop: 'jingzhou-desktop.jpg', mobile: 'jingzhou-mobile.jpg' },
-  襄阳: { desktop: 'xiangyang-zhaoming-platform.png', mobile: 'xiangyang-zhaoming-platform.png' },
+  襄阳: { desktop: 'xiangyang-zhaoming-platform.jpg', mobile: 'xiangyang-zhaoming-platform.jpg' },
   黄石: { desktop: 'huangshi-desktop.jpg', mobile: 'huangshi-mobile.jpg' },
 };
 
@@ -97,9 +97,9 @@ const localWuhanMedia = (
 });
 
 export const wuhanShowcaseMedia: CityShowcaseMedia[] = [
-  localWuhanMedia('river-bridge-night', 'yangtze-river-bridge-night-clean.png', 'center 55%', '60% 52%', { fromX: '-.6%', fromY: '.15%', toX: '.35%', toY: '-.15%' }),
-  localWuhanMedia('river-skyline', 'wuhan-river-skyline-clean.png', 'center 51%', '42% center', { fromX: '-.45%', fromY: '.15%', toX: '.3%', toY: '-.12%' }),
-  localWuhanMedia('lakes-skyline', 'wuhan-lakes-skyline-clean.png', 'center 49%', '68% center', { fromX: '.4%', fromY: '.12%', toX: '-.3%', toY: '-.12%' }),
+  localWuhanMedia('river-bridge-night', 'yangtze-river-bridge-night-clean.jpg', 'center 55%', '60% 52%', { fromX: '-.6%', fromY: '.15%', toX: '.35%', toY: '-.15%' }),
+  localWuhanMedia('river-skyline', 'wuhan-river-skyline-clean.jpg', 'center 51%', '42% center', { fromX: '-.45%', fromY: '.15%', toX: '.3%', toY: '-.12%' }),
+  localWuhanMedia('lakes-skyline', 'wuhan-lakes-skyline-clean.jpg', 'center 49%', '68% center', { fromX: '.4%', fromY: '.12%', toX: '-.3%', toY: '-.12%' }),
 ];
 
 export const cityShowcaseItems: CityShowcaseItem[] = [

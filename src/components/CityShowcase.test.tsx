@@ -20,8 +20,8 @@ function ShowcaseHarness({ onStartPlanning = () => undefined }: { onStartPlannin
 describe('CityShowcase', () => {
   it('uses the user-provided ancient architecture image for Xiangyang without changing its motion settings', () => {
     const xiangyang = cityShowcaseItems.find((item) => item.city === '襄阳');
-    expect(xiangyang?.imageUrl).toContain('/cities/xiangyang-zhaoming-platform.png');
-    expect(xiangyang?.mobileImageUrl).toContain('/cities/xiangyang-zhaoming-platform.png');
+    expect(xiangyang?.imageUrl).toContain('/cities/xiangyang-zhaoming-platform.jpg');
+    expect(xiangyang?.mobileImageUrl).toContain('/cities/xiangyang-zhaoming-platform.jpg');
     expect(xiangyang?.motion).toEqual({ fromX: '-.8%', fromY: '.15%', toX: '.45%', toY: '-.3%' });
   });
   it('武汉图库只保留适合宽屏展示的三张高清横图', () => {
