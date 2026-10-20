@@ -4,6 +4,12 @@ const AMAP_ROOT = 'https://restapi.amap.com';
 export const CITY_CODES = { 武汉: '027', 宜昌: '0717', 恩施: '0718', 荆州: '0716', 襄阳: '0710', 黄石: '0714' };
 export const TRANSIT_STRATEGIES = { recommended: 0, economy: 1, 'fewest-transfers': 2, 'least-walking': 3, 'subway-first': 7, fastest: 8 };
 const resolvedCityCodes = new Map(Object.entries(CITY_CODES));
+const isTestRuntime = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+const AMAP_MIN_REQUEST_INTERVAL_MS = isTestRuntime ? 0 : 260;
+const AMAP_RATE_LIMIT_RETRY_MS = isTestRuntime ? 0 : 650;
+const AMAP_RATE_LIMIT_CODES = new Set(['10014', '10015', '10019', '10020', '10021', '10022', '10023']);
+let amapRequestQueue = Promise.resolve();
+let lastAmapRequestAt = 0;
 
 export function amapConfigured(env) { return Boolean(env.AMAP_WEB_SERVICE_KEY); }
 
@@ -210,9 +216,37 @@ async function drivingFallback(key, from, to, index) {
 }
 
 async function amapJson(path, service) {
-  const data = await fetchJson(`${AMAP_ROOT}${path}`, {}, { service });
-  if (String(data.status) !== '1') throw httpError(502, `${service}查询失败`, { upstreamCode: data.infocode, upstreamMessage: data.info });
-  return data;
+  return enqueueAmapRequest(async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await waitForAmapSlot();
+      const data = await fetchJson(`${AMAP_ROOT}${path}`, {}, { service });
+      if (String(data.status) === '1') return data;
+      const upstreamCode = String(data.infocode || '');
+      if (AMAP_RATE_LIMIT_CODES.has(upstreamCode) && attempt < 2) {
+        await delay(AMAP_RATE_LIMIT_RETRY_MS * (attempt + 1));
+        continue;
+      }
+      throw httpError(502, `${service}查询失败`, { upstreamCode: data.infocode, upstreamMessage: data.info });
+    }
+    throw httpError(502, `${service}查询失败`);
+  });
+}
+
+function enqueueAmapRequest(task) {
+  const result = amapRequestQueue.then(task, task);
+  amapRequestQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+async function waitForAmapSlot() {
+  const remaining = AMAP_MIN_REQUEST_INTERVAL_MS - (Date.now() - lastAmapRequestAt);
+  if (remaining > 0) await delay(remaining);
+  lastAmapRequestAt = Date.now();
+}
+
+function delay(milliseconds) {
+  if (milliseconds <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 async function resolveTransitCityCode(key, city) {
   const name = assertText(city, '城市', { max: 50 });

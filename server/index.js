@@ -21,7 +21,7 @@ export default {
 
 async function handleApi(request, env, url, cors) {
   const key = `${request.method.toUpperCase()} ${url.pathname}`;
-  if (key === 'GET /api/health') return json({ ok: true, generatedAt: new Date().toISOString(), capabilities: { ai: aiConfigured(env), aiProvider: aiProvider(env), amap: amapConfigured(env), vehicleRealtime: false }, vehicleRealtimeMessage: '车辆 GPS/列车位置需要当地运营方授权数据源。' }, 200, noStore(cors));
+  if (key === 'GET /api/health') return json({ ok: true, generatedAt: new Date().toISOString(), build: buildInfo(env), capabilities: { ai: aiConfigured(env), aiProvider: aiProvider(env), amap: amapConfigured(env), vehicleRealtime: false }, vehicleRealtimeMessage: '车辆 GPS/列车位置需要当地运营方授权数据源。' }, 200, noStore(cors));
   if (key === 'GET /api/showcase/wuhan') return json(wuhanShowcaseConfig(env), 200, noStore(cors));
 
   if (key === 'POST /api/ai/parse-request') {
@@ -63,6 +63,11 @@ async function handleApi(request, env, url, cors) {
   if (key === 'POST /api/transit/plan') return json(await transitPlan(env, await readJson(request, 128_000)), 200, trafficCache(cors));
 
   return json({ error: 'API endpoint not found' }, 404, cors);
+}
+
+function buildInfo(env) {
+  const clean = (value) => String(value || '').trim().slice(0, 64) || 'unknown';
+  return { sha: clean(env.API_BUILD_SHA || env.BUILD_SHA), builtAt: clean(env.API_BUILT_AT || env.BUILT_AT) };
 }
 
 async function serveAsset(request, env, url) {

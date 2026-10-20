@@ -11,7 +11,8 @@
     "test:e2e": "playwright test",
     "build": "node scripts/clean-dist.mjs && tsc -b && vite build --base=/ --outDir dist/client && node scripts/prepare-sites.mjs",
     "build:static": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start:server": "node --env-file-if-exists=.env.local server/node-entry.js"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

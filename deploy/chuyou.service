@@ -1,0 +1,19 @@
+[Unit]
+Description=ChuYou AI API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/chuyou/app
+EnvironmentFile=/etc/chuyou/chuyou.env
+ExecStart=/usr/bin/node server/node-entry.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

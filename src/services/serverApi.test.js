@@ -17,6 +17,18 @@ describe('Sites API router', () => {
     expect(await response.json()).toMatchObject({ ok: true, capabilities: { ai: true, amap: true, vehicleRealtime: false } });
   });
 
+  it('reports the deployed API build without leaking other env values', async () => {
+    const response = await worker.fetch(new Request('https://example.test/api/health'), { API_BUILD_SHA: 'abc123', DASHSCOPE_API_KEY: 'secret' });
+    const payload = await response.json();
+    expect(payload.build).toMatchObject({ sha: 'abc123', builtAt: 'unknown' });
+    expect(JSON.stringify(payload)).not.toContain('secret');
+  });
+
+  it('reports unknown build when no SHA is configured', async () => {
+    const response = await worker.fetch(new Request('https://example.test/api/health'), {});
+    expect((await response.json()).build).toEqual({ sha: 'unknown', builtAt: 'unknown' });
+  });
+
   it('rejects unknown cross-origin callers', async () => {
     const response = await worker.fetch(new Request('https://example.test/api/health', { headers: { Origin: 'https://attacker.test' } }), {});
     expect(response.status).toBe(403);
@@ -190,6 +202,20 @@ describe('Sites API router', () => {
     expect((await response.json()).paths[0]).toMatchObject({ distanceKm: 1.2, durationMinutes: 5, taxiCost: 18, coordinateSystem: 'gcj02', geometrySource: 'amap-directions-v5', polylines: [[[114.006, 30.006], [114.2, 30.2]]], steps: [{ instruction: '沿东山大道行驶', road: '东山大道' }] });
     expect(fetcher.mock.calls[0][0]).toContain('/v3/assistant/coordinate/convert?');
     expect(fetcher.mock.calls[1][0]).toContain('origin=114.006000%2C30.006000');
+  });
+
+  it('retries a rate-limited AMap route request instead of failing the user flow', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: '0', infocode: '10021', info: 'CUQPS_HAS_EXCEEDED_THE_LIMIT' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: '1', route: { paths: [{ distance: '1800', cost: { duration: '420' }, steps: [{ instruction: '沿测试道路行驶', road_name: '测试道路', polyline: '111.1,30.1;111.2,30.2' }] }] } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetcher);
+    const response = await worker.fetch(new Request('https://example.test/api/route/plan', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'driving', origin: { lng: 111.1, lat: 30.1 }, destination: { lng: 111.2, lat: 30.2 } }),
+    }), { AMAP_WEB_SERVICE_KEY: 'test' });
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect((await response.json()).paths[0]).toMatchObject({ distanceKm: 1.8, durationMinutes: 7 });
   });
 
   it('orchestrates restaurant facts and AI ranking in one guide endpoint', async () => {
