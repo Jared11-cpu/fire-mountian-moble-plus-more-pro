@@ -27,7 +27,7 @@ import {
   type TripPlan,
   type TripRequest,
 } from '../domain/trip';
-import { enrichTripPlanWithBackend, parseTravelRequestWithAi, type AiItinerarySchedule, type AiTravelRequest, type GenerationStage } from '../services/travelApi';
+import { enrichTripPlanWithBackend, isTimeoutError, parseTravelRequestWithAi, type AiItinerarySchedule, type AiTravelRequest, type GenerationStage } from '../services/travelApi';
 import type { JournalEntry, RoutePoint } from '../types/route';
 
 const STORAGE_KEY = 'chuyou-app-state-v2';
@@ -146,6 +146,8 @@ export function TripProvider({ children }: { children: ReactNode }) {
   const hydrated = useRef(false);
   const generationId = useRef(0);
   const generationAbort = useRef<AbortController | null>(null);
+  const generationDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generationStage = useRef<GenerationStage | null>(null);
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     const id = Date.now();
@@ -201,6 +203,8 @@ export function TripProvider({ children }: { children: ReactNode }) {
     const local = parseTravelRequest(text, state.request);
     try {
       const ai = await parseTravelRequestWithAi(text, signal);
+      // 请求返回时本次生成可能已被取消或被新的生成取代，不能再写入旧输入。
+      if (signal?.aborted) throw signal.reason;
       const result = mergeAiTravelRequest(local, ai, text);
       dispatch({ type: 'parsed', request: result.request, tags: result.tags, warnings: result.warnings });
       notify(`千问已识别 ${result.tags.length} 项，请确认后生成。`, 'success');
@@ -221,17 +225,39 @@ export function TripProvider({ children }: { children: ReactNode }) {
 
   const generate = useCallback(() => generateForRequest(state.request), [generateForRequest, state.request]);
 
+  const clearDeadline = useCallback(() => {
+    if (generationDeadline.current) clearTimeout(generationDeadline.current);
+    generationDeadline.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    generationAbort.current?.abort();
+    clearDeadline();
+  }, [clearDeadline]);
+
   const startGeneration = useCallback(() => {
     generationAbort.current?.abort();
+    clearDeadline();
     const controller = new AbortController();
     generationAbort.current = controller;
     const id = ++generationId.current;
-    const onStage = (stage: GenerationStage) => { if (id === generationId.current) dispatch({ type: 'stage', stage }); };
+    generationStage.current = 'parse';
+    // 服务端单次上游 25 秒超时不等于整条流程有上限；这里给整次生成一个总期限，超时即中止所有在途请求。
+    generationDeadline.current = setTimeout(() => controller.abort(new DOMException('生成超时', 'TimeoutError')), GENERATION_DEADLINE_MS);
+    const onStage = (stage: GenerationStage) => { if (id === generationId.current) { generationStage.current = stage; dispatch({ type: 'stage', stage }); } };
     return { id, signal: controller.signal, onStage };
-  }, []);
+  }, [clearDeadline]);
+
+  const finishGeneration = useCallback((id: number) => {
+    if (id !== generationId.current) return false;
+    clearDeadline();
+    generationAbort.current = null;
+    return true;
+  }, [clearDeadline]);
 
   const cancelGeneration = useCallback(() => {
     if (!generationAbort.current) return;
+    clearDeadline();
     generationAbort.current.abort();
     generationAbort.current = null;
     generationId.current += 1;
@@ -240,7 +266,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'stage', stage: null });
     dispatch({ type: 'summary', value: '已取消本次生成，当前方案保持不变。' });
     notify('已取消生成，可修改条件后重新开始。');
-  }, [notify]);
+  }, [clearDeadline, notify]);
 
   const generateFromText = useCallback(async (text: string) => {
     const { id: currentGeneration, signal, onStage } = startGeneration();
@@ -262,14 +288,19 @@ export function TripProvider({ children }: { children: ReactNode }) {
       return finalPlan;
     } catch (error) {
       if (currentGeneration === generationId.current) {
-        dispatch({ type: 'summary', value: '真实 AI 分析暂未完整返回，未展示规则生成的占位方案。' });
-        notify(error instanceof Error ? error.message : 'AI 个性化方案生成失败，请稍后重试。', 'error');
+        if (isTimeoutError(error)) {
+          dispatch({ type: 'summary', value: timeoutMessage(generationStage.current) });
+          notify(timeoutMessage(generationStage.current), 'error');
+        } else {
+          dispatch({ type: 'summary', value: '真实 AI 分析暂未完整返回，未展示规则生成的占位方案。' });
+          notify(error instanceof Error ? error.message : 'AI 个性化方案生成失败，请稍后重试。', 'error');
+        }
       }
       throw error;
     } finally {
-      if (currentGeneration === generationId.current) { generationAbort.current = null; dispatch({ type: 'generating', value: false }); }
+      if (finishGeneration(currentGeneration)) { dispatch({ type: 'generating', value: false }); dispatch({ type: 'stage', stage: null }); }
     }
-  }, [notify, parseText, startGeneration, state.plan]);
+  }, [finishGeneration, notify, parseText, startGeneration, state.plan]);
 
   const replan = useCallback(async () => {
     if (state.isReplanning || !state.plan) return;
@@ -288,13 +319,14 @@ export function TripProvider({ children }: { children: ReactNode }) {
       notify(difference.message, difference.changed ? 'success' : 'info');
     } catch (error) {
       if (currentGeneration === generationId.current) {
-        dispatch({ type: 'summary', value: '重新分析未完整返回，已保留上一次真实方案。' });
-        notify(error instanceof Error ? error.message : '重新分析失败，请稍后重试。', 'error');
+        const message = isTimeoutError(error) ? timeoutMessage(generationStage.current) : '重新分析未完整返回，已保留上一次真实方案。';
+        dispatch({ type: 'summary', value: message });
+        notify(isTimeoutError(error) ? message : error instanceof Error ? error.message : '重新分析失败，请稍后重试。', 'error');
       }
     } finally {
-      if (currentGeneration === generationId.current) { generationAbort.current = null; dispatch({ type: 'replanning', value: false }); }
+      if (finishGeneration(currentGeneration)) { dispatch({ type: 'replanning', value: false }); dispatch({ type: 'stage', stage: null }); }
     }
-  }, [notify, startGeneration, state.isReplanning, state.plan, state.request]);
+  }, [finishGeneration, notify, startGeneration, state.isReplanning, state.plan, state.request]);
 
   const setPlan = useCallback((plan: TripPlan | null) => dispatch({ type: 'plan', plan }), []);
   const patchPlan = useCallback((updater: (plan: TripPlan) => TripPlan) => {
@@ -381,6 +413,13 @@ function applyPersonalizedRoute(plan: TripPlan, recommended: RoutePoint[]): Trip
     },
     settings: { ...plan.settings, targetPointCount: points.length, targetDurationMinutes: points.reduce((sum, point) => sum + point.durationMinutes + point.travelMinutesToNext, 0) },
   };
+}
+
+export const GENERATION_DEADLINE_MS = 90_000;
+const STAGE_LABELS: Record<GenerationStage, string> = { parse: '识别需求', places: '检索真实地点', analysis: '餐厅、分析与排程' };
+
+function timeoutMessage(stage: GenerationStage | null) {
+  return `生成超过 ${GENERATION_DEADLINE_MS / 1000} 秒仍未完成，已在「${stage ? STAGE_LABELS[stage] : '准备'}」阶段停止，当前方案保持不变。`;
 }
 
 function applyEnrichment(plan: TripPlan, enrichment: Awaited<ReturnType<typeof enrichTripPlanWithBackend>>): TripPlan {

@@ -435,7 +435,7 @@ async function fetchTravelApi(input: RequestInfo | URL, init?: RequestInit) {
       if (!isTransientApiStatus(response.status) || attempt === 1) return response;
       lastResponse = response;
     } catch (error) {
-      if (init?.signal?.aborted) throw error;
+      if (init?.signal?.aborted) throw init.signal.reason instanceof DOMException ? init.signal.reason : error;
       lastError = error;
       if (attempt === 1) throw error;
     }
@@ -451,10 +451,16 @@ function isTransientApiStatus(status: number) {
   return status === 408 || status === 425 || status === 429 || status === 503;
 }
 
+// 用户取消（AbortError）和整体超时（TimeoutError）都要中止后续阶段，不能被当成普通失败吞掉后继续请求。
 export function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === 'AbortError';
+  return error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError');
+}
+
+export function isTimeoutError(error: unknown) {
+  return error instanceof DOMException && error.name === 'TimeoutError';
 }
 
 function throwIfAborted(signal?: AbortSignal) {
-  if (signal?.aborted) throw new DOMException('生成已取消', 'AbortError');
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof DOMException ? signal.reason : new DOMException('生成已取消', 'AbortError');
 }

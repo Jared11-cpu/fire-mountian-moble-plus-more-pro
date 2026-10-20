@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BedDouble, Bot, ClipboardList, Loader2, MessageSquareReply, Sparkles, Video } from 'lucide-react';
 import { cities } from '../data/mockData';
 import { CITY_NAMES } from '../domain/trip';
@@ -18,23 +18,33 @@ export function BusinessPage() {
   const [unmatchedSpots, setUnmatchedSpots] = useState<string[]>([]);
   const [toast, setToast] = useState('当前为规则模板示例，点击生成获取 AI 方案');
 
+  const pending = useRef<AbortController | null>(null);
+  useEffect(() => () => pending.current?.abort(), []);
+
   const generate = async () => {
     if (loading) return;
+    const controller = new AbortController();
+    pending.current = controller;
     setLoading(true);
     setToast('高德核实周边地点，千问生成住客服务方案…');
     try {
-      const result = await requestBusinessPlan(form);
+      const result = await requestBusinessPlan(form, controller.signal);
+      if (controller.signal.aborted) return;
       setPlan(result);
       setSource('ai');
       setUnmatchedSpots(result.unmatchedSpots);
       setToast(`已用千问 + 高德生成 ${form.name || '商家'} 的住客服务方案`);
     } catch (error) {
+      if (controller.signal.aborted) return;
       setPlan(generateBusinessPlan(form));
       setSource('rules');
       setUnmatchedSpots([]);
       setToast(`${error instanceof Error ? error.message : 'AI 服务暂不可用'}，已改用规则模板`);
     } finally {
-      setLoading(false);
+      if (pending.current === controller) {
+        pending.current = null;
+        setLoading(false);
+      }
     }
   };
 
