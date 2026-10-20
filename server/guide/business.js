@@ -18,6 +18,8 @@ export async function businessPlan(env, input) {
     return result.items.find((item) => item.location && sameCity(item.city, city) && sameName(item.name, keywords)) ?? null;
   }));
   const spots = lookups.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : []);
+  // 全部查询都失败（未配置 Key、鉴权失败、超时）时如实返回高德错误，不能误报成"景点名称找不到"。
+  if (!spots.length && lookups.every((result) => result.status === 'rejected')) throw lookups[0].reason;
   if (!spots.length) throw httpError(422, `高德没有在${city}找到这些景点，请检查名称后重试`);
   const unmatchedSpots = spotNames.filter((_, index) => lookups[index].status !== 'fulfilled' || !lookups[index].value);
 

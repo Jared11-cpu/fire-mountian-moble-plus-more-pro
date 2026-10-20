@@ -182,6 +182,12 @@ describe('Sites API router', () => {
       expect(reasons).toContain('45');
     });
 
+    it('reports a missing AMap key instead of claiming the spots do not exist', async () => {
+      const response = await worker.fetch(businessRequest(), { DASHSCOPE_API_KEY: 'test' });
+      expect(response.status).toBe(503);
+      expect((await response.json()).error).not.toContain('没有在宜昌找到');
+    });
+
     it('treats a same-name place in another city as unmatched', async () => {
       vi.stubGlobal('fetch', amapAndQwen(baseCopy, { textPois: [{ id: 'dam-other', name: '三峡大坝', cityname: '重庆市', location: '107.0,29.5' }] }));
       const response = await worker.fetch(businessRequest(), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' });
