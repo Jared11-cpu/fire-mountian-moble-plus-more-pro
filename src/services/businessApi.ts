@@ -1,7 +1,7 @@
 import type { BusinessInput, BusinessPlan } from '../utils/aiGenerator';
 
 export type BusinessFactCheck = { removedCount: number; reasons: string[]; restaurantsVerified: boolean };
-export type AiBusinessPlan = BusinessPlan & { unmatchedSpots: string[]; generatedAt: string; factCheck: BusinessFactCheck };
+export type AiBusinessPlan = BusinessPlan & { unmatchedSpots: string[]; generatedAt: string; factCheck: BusinessFactCheck; copySource: 'ai' | 'facts'; copyError: string | null };
 
 export const BUSINESS_PLAN_TIMEOUT_MS = 60_000;
 
@@ -39,6 +39,8 @@ export async function requestBusinessPlan(input: BusinessInput & { city: string 
     videoScript: payload.videoScript, redbook: payload.redbook, replies: payload.replies,
     unmatchedSpots: Array.isArray(payload.unmatchedSpots) ? payload.unmatchedSpots : [],
     generatedAt: String(payload.generatedAt || new Date().toISOString()),
+    copySource: payload.source === 'amap-facts' ? 'facts' : 'ai',
+    copyError: typeof payload.copyError === 'string' ? payload.copyError : null,
     factCheck: {
       removedCount: Array.isArray(payload.factCheck?.removed) ? payload.factCheck.removed.length : 0,
       reasons: Array.isArray(payload.factCheck?.removed) ? payload.factCheck.removed.map((item: { reason?: unknown }) => String(item?.reason ?? '')).filter(Boolean).slice(0, 5) : [],

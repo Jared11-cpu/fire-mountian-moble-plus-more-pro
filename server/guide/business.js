@@ -30,12 +30,21 @@ export async function businessPlan(env, input) {
     .slice(0, 8);
 
   const facts = { name, city, target, spots: spots.map(placeFacts), restaurants: restaurants.map(placeFacts) };
-  const generated = await businessCopy(facts, env);
-  const { content, removed } = verifyBusinessCopy(generated, facts);
   const fallback = factOnlyCopy(facts);
+  let generated;
+  let copyError = null;
+  try {
+    generated = await businessCopy(facts, env);
+  } catch (error) {
+    // 未配置 Key 仍如实报错；千问超时或返回异常时，只用已核实事实成文，并明确标记不是 AI 文案。
+    if (error?.status === 503) throw error;
+    copyError = error instanceof Error ? error.message : 'AI 文案生成失败';
+    generated = fallback;
+  }
+  const { content, removed } = verifyBusinessCopy(generated, facts);
   const filled = Object.fromEntries(Object.entries(content).map(([key, value]) => [key, (Array.isArray(value) ? value.length : value) ? value : fallback[key]]));
   return {
-    source: 'amap+qwen', generatedAt: new Date().toISOString(), facts, unmatchedSpots,
+    source: copyError ? 'amap-facts' : 'amap+qwen', copyError, generatedAt: new Date().toISOString(), facts, unmatchedSpots,
     restaurantsVerified: restaurants.length > 0,
     factCheck: { removed, filledFromFacts: Object.keys(content).filter((key) => filled[key] !== content[key]) },
     ...filled,

@@ -35,7 +35,9 @@ export function BusinessPage() {
       setSource('ai');
       setUnmatchedSpots(result.unmatchedSpots);
       setFactCheck(result.factCheck);
-      setToast(`已用千问 + 高德生成 ${form.name || '商家'} 的住客服务方案`);
+      setToast(result.copySource === 'facts'
+        ? `千问文案暂未返回（${result.copyError ?? '超时'}），已只用高德核实的地点生成 ${form.name || '商家'} 的住客服务方案`
+        : `已用千问 + 高德生成 ${form.name || '商家'} 的住客服务方案`);
     } catch (error) {
       if (controller.signal.aborted) return;
       setPlan(generateBusinessPlan(form));

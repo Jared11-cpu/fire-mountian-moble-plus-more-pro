@@ -166,6 +166,20 @@ describe('Sites API router', () => {
       food: ['杜记凉虾，人均 15 元', '杜记凉虾，人均 45 元'], videoScript: ['镜头 1：民宿江景'], redbook: '住在江边，步行可达三峡大坝。打卡编造古镇！', replies: ['预订请致电 13800138000', '可以帮您规划去三峡大坝的路线'],
     };
 
+    it('falls back to facts-only copy and says so when Qwen times out', async () => {
+      const amapOnly = amapAndQwen(baseCopy);
+      vi.stubGlobal('fetch', vi.fn(async (input, init) => {
+        if (String(input).includes('/chat/completions')) throw Object.assign(new Error('timeout'), { name: 'AbortError' });
+        return amapOnly(input, init);
+      }));
+      const response = await worker.fetch(businessRequest(), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toMatchObject({ source: 'amap-facts', copyError: '通义千问响应超时' });
+      expect(body.route.join('')).toContain('三峡大坝旅游区');
+      expect(body.food).toEqual(['杜记凉虾，人均约 15 元（夷陵区）']);
+    });
+
     it('drops unverified places, invented prices, ticket/hours claims and phone numbers', async () => {
       vi.stubGlobal('fetch', amapAndQwen(baseCopy));
       const body = await (await worker.fetch(businessRequest(), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' })).json();

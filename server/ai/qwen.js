@@ -102,7 +102,7 @@ export async function customAnalysis(input, env) {
   };
 }
 
-async function qwenJson(env, { model, system, user, temperature }) {
+async function qwenJson(env, { model, system, user, temperature, timeoutMs = 25_000 }) {
   if (!env.DASHSCOPE_API_KEY) throw httpError(503, '尚未配置通义千问 API Key');
   const workspaceBaseUrl = env.DASHSCOPE_WORKSPACE_ID ? `https://${env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` : '';
   const baseUrl = String(env.AI_BASE_URL || workspaceBaseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -110,7 +110,7 @@ async function qwenJson(env, { model, system, user, temperature }) {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, temperature, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
-  }, { timeoutMs: 25_000, service: '通义千问' });
+  }, { timeoutMs, service: '通义千问' });
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw httpError(502, '通义千问没有返回有效内容');
   try { return JSON.parse(content); }
@@ -191,7 +191,8 @@ function formatMinutes(value) { return `${String(Math.floor(value / 60)).padStar
 
 export async function businessCopy(facts, env) {
   const result = await qwenJson(env, {
-    model: env.AI_RECOMMEND_MODEL || 'qwen-plus', temperature: 0.5,
+    // 七个栏位的长文案生成较慢，生产实测超过 25 秒；给到 45 秒，仍低于 Nginx 60 秒与前端 60 秒上限。
+    model: env.AI_RECOMMEND_MODEL || 'qwen-plus', temperature: 0.5, timeoutMs: 45_000,
     system: '你是湖北文旅商家的住客服务文案助手。必须只返回 JSON：{"route":["4条带时间的周边一日游安排"],"welcome":"欢迎语","reminders":["3-5条入住提醒"],"food":["3-5条周边美食推荐"],"videoScript":["4个短视频镜头"],"redbook":"小红书种草文案","replies":["3-5条客服自动回复"]}。景点只能使用 facts.spots 中的名称，餐厅只能使用 facts.restaurants 中的名称；不得编造价格、营业时间、电话或门票，facts 中有的人均消费可以引用。文案要贴合 facts.target 客群。',
     user: JSON.stringify({ facts: copyFacts(facts) }),
   });
