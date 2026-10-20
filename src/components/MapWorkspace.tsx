@@ -54,6 +54,7 @@ import {
   type BudgetItem,
   type FoodRecommendation,
   type PlannedRoutePoint,
+  type TrustNotes,
   type TripRequest,
 } from "../domain/trip";
 import { useTrip } from "../state/tripStore";
@@ -551,6 +552,56 @@ export function MapWorkspace({
   );
 }
 
+function TrustNotesPanel({ notes }: { notes: TrustNotes }) {
+  const schedule = notes.schedule;
+  const groups: Array<{ title: string; items: string[] }> = [
+    { title: "已知费用", items: notes.costs?.known ?? [] },
+    { title: "估算费用", items: notes.costs?.estimated ?? [] },
+    { title: "缺失费用", items: notes.costs?.missing ?? [] },
+    { title: "AI 分析的假设", items: notes.analysis?.assumptions ?? [] },
+    { title: "数据缺口", items: notes.analysis?.dataGaps ?? [] },
+  ].filter((group) => group.items.length > 0);
+  if (!schedule && groups.length === 0) return null;
+  return (
+    <section
+      aria-label="数据来源与可信度"
+      className="rounded-2xl border border-ink/10 bg-white p-4 text-sm shadow-sm"
+    >
+      <h4 className="font-black text-ink">数据来源与可信度</h4>
+      {schedule && (
+        <div
+          className={`mt-3 rounded-xl p-3 ${schedule.status === "infeasible" ? "bg-red-50 text-red-700" : "bg-river/5 text-ink/70"}`}
+        >
+          <strong className="block text-xs font-black">
+            {schedule.status === "infeasible"
+              ? "排程不可行：部分点位无法在 21:30 前到达，时间未套用"
+              : schedule.source === "ai"
+                ? "到达时间：千问排程，已通过 07:30–21:30 安全校验"
+                : "到达时间：规则排程（AI 未返回或未通过校验）"}
+          </strong>
+          {schedule.notes.length > 0 && (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs leading-5">
+              {schedule.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {groups.map((group) => (
+        <div key={group.title} className="mt-3">
+          <strong className="block text-xs font-black text-ink/55">{group.title}</strong>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs leading-5 text-ink/70">
+            {group.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function Overview({
   plan,
   route,
@@ -595,6 +646,7 @@ function Overview({
         </h3>
         <p className="mt-3 text-sm leading-6 text-white/65">{summary}</p>
       </section>
+      {plan.trustNotes && <TrustNotesPanel notes={plan.trustNotes} />}
       <div>
         <h4 className="font-display text-2xl font-black">路线总览</h4>
         <p className="mt-1 text-xs font-bold text-ink/45">

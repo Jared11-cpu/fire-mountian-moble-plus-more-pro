@@ -149,24 +149,43 @@ export async function scheduleItinerary(input, env) {
     return ruleSchedule(points, input.departureTime, 'AI 排程暂未返回，已按停留与交通时长顺序排程。');
   }
   // AI 偶尔给出夜间或时间不足的排程；直接返回 502 会让前端重试并多等一轮，这里改为按规则校正后返回。
-  try { return { ...validateSchedule(result, points), source: 'ai' }; }
+  try { return { ...validateSchedule(result, points), source: 'ai', status: 'ok', infeasibleDays: [] }; }
   catch { return ruleSchedule(points, result?.departureTime || input.departureTime, 'AI 排程未通过安全校验，已按停留与交通时长自动校正。'); }
 }
 
+const EARLIEST_ARRIVAL = 7 * 60 + 30;
+const LATEST_ARRIVAL = 21 * 60 + 30;
+
+// 规则降级与 AI 校验用同一安全边界：装不进 07:30-21:30 的点位不给出伪造时间，而是返回结构化的 infeasible 与删减建议。
 function ruleSchedule(points, preferredDeparture, note) {
   const preferred = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(preferredDeparture || '')) ? timeMinutes(preferredDeparture) : 8 * 60 + 30;
   const departure = Math.max(7 * 60 + 15, Math.min(10 * 60 + 30, preferred));
-  const safetyNotes = [note];
-  let cursor = 0;
-  let day = 0;
-  const items = points.map((point, index) => {
-    if (point.day !== day) { day = point.day; cursor = Math.max(7 * 60 + 30, departure + 15); }
-    const arrival = cursor;
-    cursor = arrival + point.stayMinutes + point.travelMinutesToNext;
-    if (arrival > 21 * 60 + 30 && !safetyNotes.some((text) => text.includes(`第${day}天`))) safetyNotes.push(`第${day}天点位较多，${point.name}将晚于 21:30 到达，建议减少点位。`);
-    return { id: point.id, day: point.day, arrivalTime: formatMinutes(Math.min(arrival, 23 * 60 + 59)), reason: index === 0 || points[index - 1].day !== point.day ? '当天第一站，按出发时间安排。' : '按上一站停留与交通时长顺延。' };
+  const dayStart = Math.max(EARLIEST_ARRIVAL, departure + 15);
+  const cursorByDay = new Map();
+  const overflowByDay = new Map();
+  const items = points.map((point) => {
+    const firstOfDay = !cursorByDay.has(point.day);
+    const arrival = firstOfDay ? dayStart : cursorByDay.get(point.day);
+    cursorByDay.set(point.day, arrival + point.stayMinutes + point.travelMinutesToNext);
+    if (arrival > LATEST_ARRIVAL) {
+      overflowByDay.set(point.day, [...(overflowByDay.get(point.day) || []), point]);
+      return { id: point.id, day: point.day, arrivalTime: null, overflow: true, reason: '当天停留与交通时长已超出 21:30 安全时段，未安排到达时间。' };
+    }
+    return { id: point.id, day: point.day, arrivalTime: formatMinutes(arrival), reason: firstOfDay ? '当天第一站，按出发时间安排。' : '按上一站停留与交通时长顺延。' };
   });
-  return { departureTime: formatMinutes(departure), items, safetyNotes, source: 'rules' };
+  const infeasibleDays = [...overflowByDay.entries()].sort(([left], [right]) => left - right).map(([day, list]) => ({
+    day,
+    pointIds: list.map((point) => point.id),
+    suggestion: `第${day}天 ${list.map((point) => point.name).join('、')} 无法在 21:30 前到达，请删减点位、缩短停留或移到其他天。`,
+  }));
+  return {
+    departureTime: formatMinutes(departure),
+    items,
+    safetyNotes: [note, ...infeasibleDays.map((item) => item.suggestion)],
+    source: 'rules',
+    status: infeasibleDays.length ? 'infeasible' : 'ok',
+    infeasibleDays,
+  };
 }
 function formatMinutes(value) { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }
 
@@ -223,7 +242,7 @@ function validateSchedule(value, points) {
     const point = pointById.get(id);
     if (!point || seen.has(id) || Number(item.day) !== point.day) throw httpError(502, 'AI 排程引用了无效点位或日期');
     seen.add(id);
-    return { id, day: point.day, arrivalTime: safeTime(item.arrivalTime, `${point.name}到达时间`, 7 * 60 + 30, 21 * 60 + 30), reason: assertText(item.reason || '结合安全时段、停留与交通耗时安排。', '排程理由', { max: 300 }) };
+    return { id, day: point.day, arrivalTime: safeTime(item.arrivalTime, `${point.name}到达时间`, EARLIEST_ARRIVAL, LATEST_ARRIVAL), reason: assertText(item.reason || '结合安全时段、停留与交通耗时安排。', '排程理由', { max: 300 }) };
   });
   const byId = new Map(items.map((item) => [item.id, item]));
   for (let index = 0; index < points.length; index += 1) {

@@ -386,8 +386,14 @@ function applyPersonalizedRoute(plan: TripPlan, recommended: RoutePoint[]): Trip
 function applyEnrichment(plan: TripPlan, enrichment: Awaited<ReturnType<typeof enrichTripPlanWithBackend>>): TripPlan {
   const personalized = enrichment.routePoints?.length ? applyPersonalizedRoute(plan, enrichment.routePoints) : plan;
   const safelyScheduled = enrichment.schedule ? applyAiSchedule(personalized, enrichment.schedule) : personalized;
+  const trustNotes: TripPlan['trustNotes'] = {
+    ...(safelyScheduled.trustNotes?.schedule ? { schedule: safelyScheduled.trustNotes.schedule } : {}),
+    ...(enrichment.analysisNotes ? { analysis: enrichment.analysisNotes } : {}),
+    ...(enrichment.costs ? { costs: enrichment.costs } : {}),
+  };
   return {
     ...safelyScheduled,
+    trustNotes,
     updatedAt: new Date().toISOString(),
     content: enrichment.analysis ? { ...safelyScheduled.content, summary: enrichment.analysis } : safelyScheduled.content,
     foodRecommendations: enrichment.foods ?? safelyScheduled.foodRecommendations,
@@ -395,6 +401,11 @@ function applyEnrichment(plan: TripPlan, enrichment: Awaited<ReturnType<typeof e
 }
 
 function applyAiSchedule(plan: TripPlan, schedule: AiItinerarySchedule): TripPlan {
+  const source = schedule.source === 'rules' ? 'rules' : 'ai';
+  // 当天装不下时不套用任何伪造时间，只把删减/移日建议原样展示给用户。
+  if (schedule.status === 'infeasible' || schedule.items.some((item) => item.arrivalTime === null)) {
+    return { ...plan, trustNotes: { ...plan.trustNotes, schedule: { source, status: 'infeasible', notes: schedule.safetyNotes.slice(0, 6) } } };
+  }
   const departureMinutes = safeScheduleMinutes(schedule.departureTime);
   if (departureMinutes === null || departureMinutes < 7 * 60 + 15 || departureMinutes > 10 * 60 + 30) return plan;
   const points = plan.route.points as PlannedRoutePoint[];
@@ -402,9 +413,9 @@ function applyAiSchedule(plan: TripPlan, schedule: AiItinerarySchedule): TripPla
   if (itemById.size !== points.length || points.some((point) => !itemById.has(point.id))) return plan;
   const scheduled = points.map((point) => {
     const item = itemById.get(point.id)!;
-    const minutes = safeScheduleMinutes(item.arrivalTime);
+    const minutes = item.arrivalTime === null ? null : safeScheduleMinutes(item.arrivalTime);
     if (item.day !== (point.day ?? 1) || minutes === null || minutes < 7 * 60 + 30 || minutes > 21 * 60 + 30) return null;
-    return { ...point, time: item.arrivalTime, arrivalTime: item.arrivalTime };
+    return { ...point, time: item.arrivalTime!, arrivalTime: item.arrivalTime! };
   });
   if (scheduled.some((point) => point === null)) return plan;
   const verified = scheduled as PlannedRoutePoint[];
@@ -419,6 +430,7 @@ function applyAiSchedule(plan: TripPlan, schedule: AiItinerarySchedule): TripPla
     ...plan,
     route: { ...plan.route, points: verified, recommendedStartTime: schedule.departureTime },
     settings: { ...plan.settings, departureTime: schedule.departureTime },
+    trustNotes: { ...plan.trustNotes, schedule: { source, status: 'ok', notes: schedule.safetyNotes.slice(0, 6) } },
   };
 }
 

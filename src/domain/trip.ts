@@ -66,6 +66,13 @@ export type FoodRecommendation = {
   source: { name: string; url: string; checkedAt: string };
 };
 
+// 可信度说明：区分 AI/规则来源、模型声明的假设与数据缺口、以及预算中已知/估算/缺失的费用，供方案页如实展示。
+export type TrustNotes = {
+  schedule?: { source: 'ai' | 'rules'; status: 'ok' | 'infeasible'; notes: string[] };
+  analysis?: { assumptions: string[]; dataGaps: string[] };
+  costs?: { known: string[]; estimated: string[]; missing: string[] };
+};
+
 export type TripPlan = {
   id: string;
   generationSource: 'rules-v1' | 'qwen-amap';
@@ -79,6 +86,7 @@ export type TripPlan = {
   dailyRecords: DailyRecord[];
   pointNotes: Record<string, string>;
   foodRecommendations: FoodRecommendation[];
+  trustNotes?: TrustNotes;
   lastRequestHash: string;
 };
 

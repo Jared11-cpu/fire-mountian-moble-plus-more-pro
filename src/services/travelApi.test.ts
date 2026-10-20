@@ -1,10 +1,38 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultTripRequest, generateTripPlan } from '../domain/trip';
-import { enrichTripPlanWithBackend, getDianpingSearchUrl, parseTravelRequestWithAi } from './travelApi';
+import { buildBudgetContext, describeCosts, enrichTripPlanWithBackend, getDianpingSearchUrl, parseTravelRequestWithAi } from './travelApi';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('travel backend integration', () => {
+  it('keeps analysis assumptions/data gaps and labels known, estimated and missing costs', async () => {
+    const request = { ...defaultTripRequest('宜昌'), freeText: '宜昌两天，人均600，不吃辣' };
+    const plan = generateTripPlan(request as never, null);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/attractions/search')) return new Response(JSON.stringify({ items: [{ id: 'dam', name: '三峡大坝旅游区', district: '夷陵区', location: { lng: 111.0, lat: 30.82 }, photos: ['https://example.com/dam.jpg'] }] }), { status: 200 });
+      if (url.endsWith('/api/ai/recommend')) return new Response(JSON.stringify({ data: { status: 'ok', ranked: [{ id: 'dam', reason: '必去', fitScore: 95 }], warnings: [] } }), { status: 200 });
+      if (url.endsWith('/api/restaurants/guide')) return new Response(JSON.stringify({ recommendations: [] }), { status: 200 });
+      if (url.endsWith('/api/ai/analyze')) return new Response(JSON.stringify({ data: { analysis: '路线覆盖三峡大坝。', assumptions: ['按两人同行估算'], dataGaps: ['三峡大坝门票价格缺失'] } }), { status: 200 });
+      if (url.endsWith('/api/ai/schedule')) return new Response(JSON.stringify({ error: 'x' }), { status: 400 });
+      return new Response(JSON.stringify({ error: 'unexpected request' }), { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const result = await enrichTripPlanWithBackend(plan, request as never);
+    expect(result.analysisNotes).toEqual({ assumptions: ['按两人同行估算'], dataGaps: ['三峡大坝门票价格缺失'] });
+    expect(result.costs?.missing.join('')).toContain('三峡大坝旅游区');
+    expect(result.costs?.missing.join('')).toContain('餐饮费用无法估算');
+    expect(result.costs?.estimated.join('')).toContain('计划额度');
+  });
+
+  it('never claims a food estimate when no restaurant prices are known', () => {
+    const request = defaultTripRequest('武汉');
+    const plan = generateTripPlan(request, null);
+    const costs = describeCosts(buildBudgetContext(plan, request, []), plan.route.points);
+    expect(costs.estimated.some((line) => line.startsWith('餐饮约'))).toBe(false);
+    expect(costs.missing.some((line) => line.includes('无法估算'))).toBe(true);
+  });
+
   it('uses the Qwen request parser through the existing same-origin backend', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { city: '武汉', days: 2, budgetPerPerson: 600, interests: ['美食'], dietaryNeeds: [], people: null, startDate: null, mobility: null, transportPreference: '地铁', hotelPreference: null, departureDeadline: null } }), { status: 200 }));
     vi.stubGlobal('fetch', fetcher);

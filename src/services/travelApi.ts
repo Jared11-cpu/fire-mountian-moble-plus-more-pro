@@ -1,4 +1,4 @@
-import { buildFoodRecommendations, calculateTimeline, type FoodRecommendation, type PlannedRoutePoint, type TripPlan, type TripRequest } from '../domain/trip';
+import { buildFoodRecommendations, calculateTimeline, type FoodRecommendation, type PlannedRoutePoint, type TripPlan, type TripRequest, type TrustNotes } from '../domain/trip';
 import type { RoutePoint } from '../types/route';
 
 export type AiTravelRequest = {
@@ -20,8 +20,22 @@ export type AiTravelRequest = {
 
 export type AiItinerarySchedule = {
   departureTime: string;
-  items: Array<{ id: string; day: number; arrivalTime: string; reason: string }>;
+  // arrivalTime 为 null 表示该点位装不进当天 07:30-21:30 安全时段（仅规则降级会出现）。
+  items: Array<{ id: string; day: number; arrivalTime: string | null; reason: string; overflow?: boolean }>;
   safetyNotes: string[];
+  source?: 'ai' | 'rules';
+  status?: 'ok' | 'infeasible';
+  infeasibleDays?: Array<{ day: number; pointIds: string[]; suggestion: string }>;
+};
+
+export type AnalysisResult = { analysis: string; assumptions: string[]; dataGaps: string[] };
+export type EnrichmentResult = {
+  analysis?: string;
+  analysisNotes?: NonNullable<TrustNotes['analysis']>;
+  costs?: NonNullable<TrustNotes['costs']>;
+  foods?: FoodRecommendation[];
+  routePoints?: RoutePoint[];
+  schedule?: AiItinerarySchedule;
 };
 
 export type GenerationStage = 'parse' | 'places' | 'analysis';
@@ -38,7 +52,7 @@ export async function parseTravelRequestWithAi(text: string, signal?: AbortSigna
   return payload.data as AiTravelRequest;
 }
 
-export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest, options: EnrichOptions = {}): Promise<{ analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule }> {
+export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripRequest, options: EnrichOptions = {}): Promise<EnrichmentResult> {
   const { signal, onStage } = options;
   onStage?.('places');
   const routePoints = await recommendAttractions(request, signal).catch((error) => { if (isAbortError(error)) throw error; return [] as RoutePoint[]; });
@@ -50,14 +64,18 @@ export async function enrichTripPlanWithBackend(plan: TripPlan, request: TripReq
   // 餐厅沿最终路线检索，再把人均消费与预算分配一起交给分析，AI 才能判断预算与美食需求是否满足。
   const foodsAndAnalysis = recommendRestaurantsForRoute(request, timeline, signal)
     .catch(() => [] as FoodRecommendation[])
-    .then(async (foods) => ({ foods, analysis: await analyzeTrip(analysisPlan, request, foods, signal).catch(() => '') }));
+    .then(async (foods) => ({ foods, analysis: await analyzeTrip(analysisPlan, request, foods, signal).catch((error) => { if (isAbortError(error)) throw error; return null; }) }));
   const [{ foods, analysis }, schedule] = await Promise.all([
     foodsAndAnalysis,
     requestAiSchedule(timeline, request, plan.settings.departureTime, signal).catch(() => undefined),
   ]);
   throwIfAborted(signal);
-  const result: { analysis?: string; foods?: FoodRecommendation[]; routePoints?: RoutePoint[]; schedule?: AiItinerarySchedule } = {};
-  if (analysis) result.analysis = analysis;
+  const result: EnrichmentResult = {};
+  if (analysis?.analysis) {
+    result.analysis = analysis.analysis;
+    result.analysisNotes = { assumptions: analysis.assumptions, dataGaps: analysis.dataGaps };
+  }
+  result.costs = describeCosts(buildBudgetContext(analysisPlan, request, foods), timeline);
   if (schedule) result.schedule = schedule;
   if (foods.length) result.foods = foods;
   if (routePoints.length) result.routePoints = routePoints;
@@ -99,7 +117,28 @@ async function analyzeTrip(plan: TripPlan, request: TripRequest, foods: FoodReco
     }),
   });
   const payload = await readPayload(response, 'AI 方案分析失败');
-  return typeof payload.data?.analysis === 'string' ? payload.data.analysis.trim() : '';
+  const strings = (value: unknown) => (Array.isArray(value) ? value : []).map((item) => String(item).trim()).filter(Boolean).slice(0, 10);
+  return {
+    analysis: typeof payload.data?.analysis === 'string' ? payload.data.analysis.trim() : '',
+    assumptions: strings(payload.data?.assumptions),
+    dataGaps: strings(payload.data?.dataGaps),
+  } satisfies AnalysisResult;
+}
+
+// 只陈述 context 中已有的事实：真实价格列为已知，人均中位数×餐数列为估算，没有价格的点位列为缺失，不替用户下"预算一定够"的结论。
+export function describeCosts(budget: ReturnType<typeof buildBudgetContext>, points: PlannedRoutePoint[]): NonNullable<TrustNotes['costs']> {
+  const known = budget.knownTicketCosts.map((item) => `${item.name}：约 ${item.cost} 元/人（点位已标注价格）`);
+  const estimated: string[] = [];
+  if (budget.food.estimatedSpend !== null) {
+    estimated.push(`餐饮约 ${budget.food.estimatedSpend} 元/人：${budget.food.estimateNote}${budget.food.withinAllocation === false ? '，高于餐饮分配额度' : ''}`);
+  }
+  estimated.push('各项预算分配按总预算比例拆分，是计划额度，不是实际价格。');
+  const missing: string[] = [];
+  const unpriced = points.filter((point, index) => index > 0 && !Number.isFinite(point.estimatedCost)).map((point) => point.name);
+  if (unpriced.length) missing.push(`门票/消费未知：${unpriced.slice(0, 6).join('、')}${unpriced.length > 6 ? ` 等 ${unpriced.length} 处` : ''}`);
+  if (budget.food.medianCostPerMeal === null) missing.push('周边餐厅没有返回人均价格，餐饮费用无法估算。');
+  missing.push('住宿与城际交通价格未接入真实报价，请以预订平台为准。');
+  return { known, estimated, missing };
 }
 
 export function buildBudgetContext(plan: TripPlan, request: TripRequest, foods: FoodRecommendation[]) {

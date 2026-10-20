@@ -171,6 +171,57 @@ describe('Sites API router', () => {
     expect((await timedOut.json()).data).toMatchObject({ source: 'rules', departureTime: '08:30' });
   });
 
+  describe('rule schedule fallback keeps the 07:30-21:30 safety window', () => {
+    const scheduleRequest = (points) => new Request('https://example.test/api/ai/schedule', { method: 'POST', body: JSON.stringify({ city: '宜昌', days: 2, points }) });
+    const aiReply = (content) => vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 }));
+    const overloadedDay = [
+      { id: 'a', name: '三峡大坝', day: 1, stayMinutes: 480, travelMinutesToNext: 720 },
+      { id: 'b', name: '三峡人家', day: 1, stayMinutes: 480, travelMinutesToNext: 0 },
+      { id: 'c', name: '清江画廊', day: 2, stayMinutes: 120, travelMinutesToNext: 0 },
+    ];
+
+    it('returns infeasible days instead of fake late-night arrivals when a day cannot fit', async () => {
+      vi.stubGlobal('fetch', aiReply('not json'));
+      const response = await worker.fetch(scheduleRequest(overloadedDay), { DASHSCOPE_API_KEY: 'test' });
+      expect(response.status).toBe(200);
+      const data = (await response.json()).data;
+      expect(data).toMatchObject({ source: 'rules', status: 'infeasible' });
+      expect(data.infeasibleDays).toEqual([expect.objectContaining({ day: 1, pointIds: ['b'] })]);
+      expect(data.items.find((item) => item.id === 'b')).toMatchObject({ arrivalTime: null, overflow: true });
+      for (const item of data.items.filter((entry) => entry.arrivalTime)) {
+        const [hour, minute] = item.arrivalTime.split(':').map(Number);
+        expect(hour * 60 + minute).toBeGreaterThanOrEqual(7 * 60 + 30);
+        expect(hour * 60 + minute).toBeLessThanOrEqual(21 * 60 + 30);
+      }
+      expect(data.safetyNotes.join('')).toContain('三峡人家');
+    });
+
+    it('falls back to rules when the AI skips ids or mixes up days', async () => {
+      const wrongDay = { departureTime: '08:00', items: [{ id: 'a', day: 2, arrivalTime: '08:15', reason: 'x' }, { id: 'c', day: 2, arrivalTime: '09:00', reason: 'x' }], safetyNotes: [] };
+      vi.stubGlobal('fetch', aiReply(JSON.stringify(wrongDay)));
+      const points = [{ id: 'a', name: '三峡大坝', day: 1, stayMinutes: 120, travelMinutesToNext: 60 }, { id: 'c', name: '清江画廊', day: 2, stayMinutes: 120, travelMinutesToNext: 0 }];
+      const data = (await (await worker.fetch(scheduleRequest(points), { DASHSCOPE_API_KEY: 'test' })).json()).data;
+      expect(data).toMatchObject({ source: 'rules', status: 'ok', infeasibleDays: [] });
+      expect(data.items.map((item) => [item.id, item.day, item.arrivalTime])).toEqual([['a', 1, '08:15'], ['c', 2, '08:15']]);
+    });
+
+    it('keeps per-day order even when days are interleaved in the input', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(Object.assign(new Error('timeout'), { name: 'AbortError' })));
+      const points = [
+        { id: 'a', name: 'A', day: 1, stayMinutes: 60, travelMinutesToNext: 30 },
+        { id: 'c', name: 'C', day: 2, stayMinutes: 60, travelMinutesToNext: 0 },
+        { id: 'b', name: 'B', day: 1, stayMinutes: 60, travelMinutesToNext: 0 },
+      ];
+      const data = (await (await worker.fetch(scheduleRequest(points), { DASHSCOPE_API_KEY: 'test' })).json()).data;
+      expect(data.items.map((item) => item.arrivalTime)).toEqual(['08:45', '08:45', '10:15']);
+    });
+
+    it('still reports a missing AI provider configuration as 503', async () => {
+      const response = await worker.fetch(scheduleRequest(overloadedDay), {});
+      expect(response.status).toBe(503);
+    });
+  });
+
   it('searches explicit required places across all AMap POI types', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: '1', count: '1', pois: [{ id: 'bridge', name: '武汉长江大桥', type: '地名地址信息', location: '114.288,30.550' }] }), { status: 200 }));
     vi.stubGlobal('fetch', fetcher);
