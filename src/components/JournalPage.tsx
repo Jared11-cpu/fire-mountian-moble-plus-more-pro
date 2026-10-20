@@ -3,7 +3,7 @@ import { ArrowLeft, BookOpen, Camera, Clock3, Compass, Download, ExternalLink, H
 import { useNavigate, useParams } from 'react-router-dom';
 import { cities, type CityName } from '../data/mockData';
 import { parseLocalDate, type TripPlan } from '../domain/trip';
-import { clearJournal, compressPhoto, deletePhoto, loadPhoto, savePhoto } from '../services/journalStorage';
+import { clearJournal, compressPhoto, deletePhoto, exportJournalBackup, importJournalBackup, loadPhoto, parseJournalBackup, savePhoto } from '../services/journalStorage';
 import { fetchPointGallery, getCuratedPointCover, type PointCover } from '../services/pointImageService';
 import { useTrip } from '../state/tripStore';
 import type { JournalEntry, RoutePoint, SmartRoute } from '../types/route';
@@ -145,6 +145,31 @@ export function JournalPage() {
     catch (error) { console.error('Journal clear failed', error); notify('清空失败，请重试。', 'error'); }
   };
 
+  const backupInputRef = useRef<HTMLInputElement>(null);
+  const exportBackup = async () => {
+    try {
+      const backup = await exportJournalBackup(entries);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `楚游手账备份-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const photoCount = Object.keys(backup.photos).length;
+      notify(`已导出 ${backup.entries.length} 条记录、${photoCount} 张照片。手账只保存在本机浏览器，请妥善保管备份文件。`, 'success');
+    } catch (error) { console.error('Journal backup failed', error); notify('导出备份失败，请重试。', 'error'); }
+  };
+  const importBackup = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const result = await importJournalBackup(parseJournalBackup(await file.text()), entries);
+      setJournalEntries(result.entries);
+      const extra = [result.skipped ? `${result.skipped} 条已存在，保留了本机版本` : '', result.missingPhotos ? `${result.missingPhotos} 张照片不在备份中` : ''].filter(Boolean).join('，');
+      notify(`已恢复 ${result.added} 条记录、${result.restoredPhotos} 张照片${extra ? `（${extra}）` : ''}。`, result.missingPhotos ? 'info' : 'success');
+    } catch (error) { notify(error instanceof Error ? error.message : '导入备份失败，请重试。', 'error'); }
+    finally { if (backupInputRef.current) backupInputRef.current.value = ''; }
+  };
+
   const savePoster = async () => {
     if (visibleEntries.length === 0) return;
     setExportingPoster(true);
@@ -170,7 +195,7 @@ export function JournalPage() {
     <section className="pointer-events-none absolute left-4 right-4 top-4 z-50 flex items-start justify-between gap-4">
       <div className="pointer-events-auto max-w-[min(640px,calc(100vw-2rem))] rounded-[1.4rem] border border-white/65 bg-white/88 p-3 shadow-[0_18px_55px_rgba(18,34,42,.2)] backdrop-blur-xl md:p-4">
         <div className="flex flex-wrap items-center gap-3"><div><div className="flex items-center gap-2 text-[10px] font-black tracking-[.2em] text-river"><RouteIcon className="h-4 w-4"/>MY HUBEI ROUTE</div><h1 className="journal-handwriting mt-1 text-2xl font-black md:text-3xl">我的旅行路线手账</h1></div><div className="ml-auto hidden grid-cols-3 gap-1.5 sm:grid">{[['地点', stats.places], ['城市', stats.cities], ['照片', stats.photos]].map(([label, value]) => <div key={label} className="min-w-14 rounded-xl bg-ink/[.05] px-2 py-1.5 text-center"><b className="block text-sm">{value}</b><span className="text-[9px] font-bold text-ink/45">{label}</span></div>)}</div></div>
-        <div className="mt-3 flex flex-wrap items-center gap-2"><div className="flex rounded-full bg-ink/[.06] p-1" role="tablist">{(['real', 'example'] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => setMode(item)} className={`rounded-full px-3 py-2 text-[11px] font-black transition ${mode === item ? 'bg-ink text-white shadow-sm' : 'text-ink/55'}`}>{item === 'real' ? `已完成景点 ${completedEntries.length}` : `完整行程 ${examplePoints.length}`}</button>)}</div><button type="button" onClick={() => setShowComposer(true)} className="inline-flex items-center gap-1.5 rounded-full bg-river px-3 py-2 text-[11px] font-black text-white"><BookOpen className="h-3.5 w-3.5"/>记录行程景点</button><button type="button" disabled={visibleEntries.length === 0 || exportingPoster} onClick={savePoster} className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-tower px-3.5 py-2 text-[11px] font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:translate-y-0 disabled:opacity-40"><Download className="h-3.5 w-3.5"/>{exportingPoster ? '正在绘制水彩手账…' : '保存水彩路线海报'}</button>{completedEntries.length > 0 && mode === 'real' && <button type="button" onClick={clearAll} className="rounded-full px-3 py-2 text-[11px] font-black text-red-600">清空记录</button>}</div>
+        <div className="mt-3 flex flex-wrap items-center gap-2"><div className="flex rounded-full bg-ink/[.06] p-1" role="tablist">{(['real', 'example'] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => setMode(item)} className={`rounded-full px-3 py-2 text-[11px] font-black transition ${mode === item ? 'bg-ink text-white shadow-sm' : 'text-ink/55'}`}>{item === 'real' ? `已完成景点 ${completedEntries.length}` : `完整行程 ${examplePoints.length}`}</button>)}</div><button type="button" onClick={() => setShowComposer(true)} className="inline-flex items-center gap-1.5 rounded-full bg-river px-3 py-2 text-[11px] font-black text-white"><BookOpen className="h-3.5 w-3.5"/>记录行程景点</button><button type="button" disabled={visibleEntries.length === 0 || exportingPoster} onClick={savePoster} className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-tower px-3.5 py-2 text-[11px] font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:translate-y-0 disabled:opacity-40"><Download className="h-3.5 w-3.5"/>{exportingPoster ? '正在绘制水彩手账…' : '保存水彩路线海报'}</button><button type="button" onClick={exportBackup} disabled={entries.length === 0} className="rounded-full border border-ink/15 px-3 py-2 text-[11px] font-black text-ink/70 disabled:opacity-40">备份手账</button><button type="button" onClick={() => backupInputRef.current?.click()} className="rounded-full border border-ink/15 px-3 py-2 text-[11px] font-black text-ink/70">恢复备份</button><input ref={backupInputRef} type="file" accept="application/json,.json" aria-label="选择手账备份文件" className="hidden" onChange={(event) => void importBackup(event.target.files?.[0])} />{completedEntries.length > 0 && mode === 'real' && <button type="button" onClick={clearAll} className="rounded-full px-3 py-2 text-[11px] font-black text-red-600">清空记录</button>}</div>
       </div>
     </section>
 
