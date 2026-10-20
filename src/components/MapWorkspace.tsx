@@ -81,6 +81,7 @@ import {
   type PointCover,
 } from "../services/pointImageService";
 import { getFocusedTransportPath, RouteMap } from "./RouteMap";
+import { selectTripForecast } from "../services/weatherRange";
 import type { RoadPlanMetrics } from "../services/amapDriving";
 
 type Tab =
@@ -2034,7 +2035,8 @@ function Weather({
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
-    const key = `weather-v2-${request.destinationCity}`;
+    // 缓存键带上取天气的位置，换起点或换城市不会读到别处的预报。
+    const key = `weather-v3-${request.destinationCity}-${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
     if (reloadVersion === 0) {
       const cached = localStorage.getItem(key);
       if (cached) {
@@ -2207,9 +2209,10 @@ function Weather({
           <WeatherAdviceCard advice={advice} />
           <HourlyWeatherChart hours={weather.hourly} />
           <TripForecastCard
-            days={weather.daily.slice(
-              0,
-              Math.min(3, Math.max(1, request.days)),
+            forecast={selectTripForecast(
+              weather.daily,
+              request.startDate,
+              request.endDate,
             )}
             today={today}
           />
@@ -2537,12 +2540,13 @@ function WeatherAdviceCard({ advice }: { advice: string[] }) {
 }
 
 function TripForecastCard({
-  days,
+  forecast,
   today,
 }: {
-  days: WeatherDay[];
+  forecast: ReturnType<typeof selectTripForecast<WeatherDay>>;
   today?: WeatherDay;
 }) {
+  const days = forecast.days;
   return (
     <section
       aria-label="行程期间天气"
@@ -2551,8 +2555,13 @@ function TripForecastCard({
       <h5 className="font-display text-2xl font-black tracking-tight">
         行程期间
       </h5>
+      {forecast.message && (
+        <p className="mt-2 rounded-xl bg-tower/10 px-3 py-2 text-xs font-bold leading-5 text-ink/65" role="note">
+          {forecast.message}
+        </p>
+      )}
       <div className="mt-3 divide-y divide-ink/8">
-        {days.map((day, index) => (
+        {days.map((day) => (
           <div
             key={day.date}
             className="grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 py-4 first:pt-2"
@@ -2561,7 +2570,7 @@ function TripForecastCard({
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
                 <strong className="text-base font-black">
-                  {index === 0 ? "今天" : `第${index + 1}天`}
+                  {`第${day.tripDay}天`}
                 </strong>
                 <span className="text-xs font-bold text-ink/35">
                   {day.date.slice(5).replace("-", "/")}
