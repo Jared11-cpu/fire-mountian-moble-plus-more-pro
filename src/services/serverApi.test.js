@@ -145,6 +145,55 @@ describe('Sites API router', () => {
     expect(body.facts.spots[0].name).toBe('三峡大坝旅游区');
     const prompt = JSON.parse(fetcher.mock.calls.find((call) => String(call[0]).includes('/chat/completions'))[1].body).messages[1].content;
     expect(prompt).toContain('杜记凉虾');
+    expect(body.route).not.toContain('14:30 滨江公园');
+    expect(body.factCheck.removed).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'route', reason: expect.stringContaining('滨江公园') })]));
+  });
+
+  describe('business copy fact check', () => {
+    const businessRequest = (spots = '三峡大坝') => new Request('https://example.test/api/business/plan', { method: 'POST', body: JSON.stringify({ name: '西陵江景民宿', city: '宜昌', spots, target: '亲子家庭' }) });
+    const amapAndQwen = (copy, { around = 'ok', textPois } = {}) => vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes('/v5/place/text')) return new Response(JSON.stringify({ status: '1', pois: textPois ?? [{ id: 'dam', name: '三峡大坝旅游区', cityname: '宜昌市', adname: '夷陵区', location: '111.00,30.82' }] }), { status: 200 });
+      if (url.includes('/v5/place/around')) {
+        if (around === 'fail') return new Response(JSON.stringify({ status: '0', infocode: '10001', info: 'INVALID_USER_KEY' }), { status: 200 });
+        return new Response(JSON.stringify({ status: '1', pois: [{ id: 'r1', name: '杜记凉虾', adname: '夷陵区', location: '111.01,30.82', business: { cost: '15' } }] }), { status: 200 });
+      }
+      if (url.includes('/chat/completions')) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(copy) } }] }), { status: 200 });
+      return new Response('{}', { status: 404 });
+    });
+    const baseCopy = {
+      route: ['09:00 前往三峡大坝', '13:00 去黄鹤楼公园拍照'], welcome: '欢迎入住西陵江景民宿！门票 105 元我们帮您代购。', reminders: ['三峡大坝门票 80 元，开放时间 08:00-17:00'],
+      food: ['杜记凉虾，人均 15 元', '杜记凉虾，人均 45 元'], videoScript: ['镜头 1：民宿江景'], redbook: '住在江边，步行可达三峡大坝。打卡编造古镇！', replies: ['预订请致电 13800138000', '可以帮您规划去三峡大坝的路线'],
+    };
+
+    it('drops unverified places, invented prices, ticket/hours claims and phone numbers', async () => {
+      vi.stubGlobal('fetch', amapAndQwen(baseCopy));
+      const body = await (await worker.fetch(businessRequest(), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' })).json();
+      expect(body.route).toEqual(['09:00 前往三峡大坝']);
+      expect(body.food).toEqual(['杜记凉虾，人均 15 元']);
+      expect(body.replies).toEqual(['可以帮您规划去三峡大坝的路线']);
+      expect(body.redbook).toBe('住在江边，步行可达三峡大坝。');
+      expect(body.welcome).not.toContain('105');
+      expect(body.reminders.join('')).not.toContain('80 元');
+      expect(body.factCheck.filledFromFacts).toEqual(expect.arrayContaining(['reminders']));
+      const reasons = body.factCheck.removed.map((item) => item.reason).join('|');
+      expect(reasons).toContain('黄鹤楼公园');
+      expect(reasons).toContain('电话');
+      expect(reasons).toContain('45');
+    });
+
+    it('treats a same-name place in another city as unmatched', async () => {
+      vi.stubGlobal('fetch', amapAndQwen(baseCopy, { textPois: [{ id: 'dam-other', name: '三峡大坝', cityname: '重庆市', location: '107.0,29.5' }] }));
+      const response = await worker.fetch(businessRequest(), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' });
+      expect(response.status).toBe(422);
+    });
+
+    it('does not invent restaurant names when the nearby search fails', async () => {
+      vi.stubGlobal('fetch', amapAndQwen({ ...baseCopy, food: ['编造的网红餐厅，人均 99 元'] }, { around: 'fail' }));
+      const body = await (await worker.fetch(businessRequest(), { AMAP_WEB_SERVICE_KEY: 'test', DASHSCOPE_API_KEY: 'test' })).json();
+      expect(body.restaurantsVerified).toBe(false);
+      expect(body.food).toEqual(['周边餐厅暂未查询到，请在地图中搜索附近餐饮。']);
+    });
   });
 
   it('accepts only complete daytime AI schedules with enough travel time', async () => {

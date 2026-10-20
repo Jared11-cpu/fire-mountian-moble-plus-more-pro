@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BedDouble, Bot, ClipboardList, Loader2, MessageSquareReply, Sparkles, Video } from 'lucide-react';
 import { cities } from '../data/mockData';
 import { CITY_NAMES } from '../domain/trip';
-import { requestBusinessPlan } from '../services/businessApi';
+import { requestBusinessPlan, type AiBusinessPlan } from '../services/businessApi';
 import { generateBusinessPlan, type BusinessInput, type BusinessPlan } from '../utils/aiGenerator';
 
 export function BusinessPage() {
@@ -16,6 +16,7 @@ export function BusinessPage() {
   const [plan, setPlan] = useState<BusinessPlan>(() => generateBusinessPlan(form));
   const [source, setSource] = useState<'rules' | 'ai'>('rules');
   const [unmatchedSpots, setUnmatchedSpots] = useState<string[]>([]);
+  const [factCheck, setFactCheck] = useState<AiBusinessPlan['factCheck'] | null>(null);
   const [toast, setToast] = useState('当前为规则模板示例，点击生成获取 AI 方案');
 
   const pending = useRef<AbortController | null>(null);
@@ -33,12 +34,14 @@ export function BusinessPage() {
       setPlan(result);
       setSource('ai');
       setUnmatchedSpots(result.unmatchedSpots);
+      setFactCheck(result.factCheck);
       setToast(`已用千问 + 高德生成 ${form.name || '商家'} 的住客服务方案`);
     } catch (error) {
       if (controller.signal.aborted) return;
       setPlan(generateBusinessPlan(form));
       setSource('rules');
       setUnmatchedSpots([]);
+      setFactCheck(null);
       setToast(`${error instanceof Error ? error.message : 'AI 服务暂不可用'}，已改用规则模板`);
     } finally {
       if (pending.current === controller) {
@@ -57,7 +60,7 @@ export function BusinessPage() {
             <h1 className="mt-2 font-display text-4xl font-black text-ink md:text-5xl">民宿/景区 AI 商家后台</h1>
             <p className="mt-4 max-w-2xl text-ink/65">路线、欢迎语、提醒、脚本和客服话术一键生成。</p>
             {source === 'ai'
-              ? <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-river/20 bg-river/[0.06] px-3 py-2 text-xs font-bold leading-5 text-river" role="note">周边景点与餐厅已由高德核实，文案由千问生成；价格与营业时间以商家公告为准。{unmatchedSpots.length > 0 && ` 未找到：${unmatchedSpots.join('、')}。`}</p>
+              ? <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-river/20 bg-river/[0.06] px-3 py-2 text-xs font-bold leading-5 text-river" role="note">周边景点与餐厅已由高德核实，文案由千问生成；价格与营业时间以商家公告为准。{unmatchedSpots.length > 0 && ` 未找到：${unmatchedSpots.join('、')}。`}{factCheck && !factCheck.restaurantsVerified && ' 周边餐厅未查询到，美食栏未列具体店名。'}{factCheck && factCheck.removedCount > 0 && ` 已移除 ${factCheck.removedCount} 条无法核实的内容（${factCheck.reasons[0]}${factCheck.removedCount > 1 ? ' 等' : ''}）。`}</p>
               : <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-tower/25 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower" role="note">当前内容由本地规则模板生成，仅作示例；点击“生成住客服务方案”获取基于真实周边地点的 AI 方案。</p>}
           </div>
           <div className="rounded-full bg-ink px-5 py-3 text-sm font-bold text-white shadow-soft">{toast}</div>
