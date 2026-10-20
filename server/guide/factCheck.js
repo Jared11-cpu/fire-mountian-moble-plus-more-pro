@@ -9,6 +9,8 @@ const PRICE_PATTERN = /(\d{1,5}(?:\.\d+)?)\s*(?:元|块)/g;
 const YEN_PATTERN = /[￥¥]\s*(\d{1,5}(?:\.\d+)?)/g;
 const PHONE_PATTERN = /(?:1[3-9]\d{9}|0\d{2,3}-?\d{7,8}|400-?\d{3}-?\d{4})/;
 const UNSUPPORTED_FACT_PATTERN = /门票|票价|营业时间|开放时间|开门|关门/;
+// 不带数字也属于门票/开放时间断言（生产实测模型会写"24小时开放，免费入园"），高德没有这类事实，一律移除。
+const UNSUPPORTED_CLAIM_PATTERN = /免费入园|免费开放|免票|全天开放|小时开放|全年无休|无需预约/;
 const PLACEHOLDER = '§';
 
 export function verifyBusinessCopy(content, facts) {
@@ -43,6 +45,7 @@ export function verifyBusinessCopy(content, facts) {
 function unsupportedReason(text, knownNames, knownPrices, knownHours) {
   const value = String(text || '');
   if (PHONE_PATTERN.test(value)) return '包含未核实的电话号码';
+  if (UNSUPPORTED_CLAIM_PATTERN.test(value)) return '包含未核实的门票或开放时间说法';
   if (UNSUPPORTED_FACT_PATTERN.test(value) && /\d/.test(value) && !knownHours.some((hours) => value.includes(hours))) return '包含未核实的门票或营业时间';
   for (const price of extractPrices(value)) {
     if (!knownPrices.has(price)) return `价格 ${price} 元不在高德返回的人均消费中`;
