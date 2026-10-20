@@ -288,7 +288,8 @@ async function routeCoordinate(key, point, name) { const value = requiredCoordin
 function requiredCoordinate(point, name) { if (!point || !Number.isFinite(Number(point.lng)) || !Number.isFinite(Number(point.lat))) throw httpError(400, `${name} 需要有效 lng 和 lat`); return `${Number(point.lng).toFixed(6)},${Number(point.lat).toFixed(6)}`; }
 function requireCoordinateString(value, name) { const text = String(value || ''); const [lng, lat] = text.split(',').map(Number); if (!Number.isFinite(lng) || !Number.isFinite(lat)) throw httpError(400, `${name} 坐标格式应为 经度,纬度`); return `${lng.toFixed(6)},${lat.toFixed(6)}`; }
 function validCoordinate(value) { try { return value ? requireCoordinateString(value, 'location') : ''; } catch { throw httpError(400, 'location 坐标格式应为 经度,纬度'); } }
-export function parsePolyline(value) { if (Array.isArray(value)) return value.flatMap(parsePolyline); if (typeof value !== 'string') return []; return value.split(';').map((pair) => pair.split(',').map(Number)).filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat)); }
+// 驾车 v5 的 polyline 是字符串；公交 v5 的步行、公交、铁路段是 { polyline: "lng,lat;..." } 对象，以前被当成空线，地图只剩点。
+export function parsePolyline(value) { if (Array.isArray(value)) return value.flatMap(parsePolyline); if (value && typeof value === 'object' && 'polyline' in value) return parsePolyline(value.polyline); if (typeof value !== 'string') return []; return value.split(';').map((pair) => pair.split(',').map(Number)).filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat)); }
 function secondsToMinutes(value) { const seconds = Number(value ?? 0); return seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0; }
 function money(value) { const number = Number(value); return Number.isFinite(number) && number >= 0 ? round1(number) : undefined; }
 function numberOrNull(value) { const number = Number(value); return Number.isFinite(number) ? number : null; }

@@ -121,4 +121,34 @@ describe('RouteMap lifecycle', () => {
     expect(amapMocks.Map).not.toHaveBeenCalled();
     expect(view.queryByRole('application', { name: '可缩放和拖动的高德路线地图' })).not.toBeInTheDocument();
   });
+
+  it('still shows the map with its marker when the journal has only one place', async () => {
+    const base = baseRoutes.武汉;
+    const route = { ...base, points: [base.points[0]], startPoint: base.points[0] };
+    const view = render(<RouteMap route={route} selectedPointId={route.points[0].id} activePointIndex={0} navigating={false} mapOnly onSelectPoint={() => undefined} />);
+
+    await waitFor(() => expect(amapMocks.Map).toHaveBeenCalledTimes(1));
+    expect(amapMocks.planBackendDrivingRoute).not.toHaveBeenCalled();
+    expect(amapMocks.planAmapDrivingRoute).not.toHaveBeenCalled();
+    expect(view.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps the full road route when the transit plan only has geometry for some segments', async () => {
+    const route = { ...baseRoutes.武汉, startPoint: baseRoutes.武汉.points[0] };
+    const common = { selectedPointId: route.points[0].id, activePointIndex: 0, navigating: false, mapOnly: true };
+    const view = render(<RouteMap route={route} {...common} onSelectPoint={() => undefined} />);
+    await waitFor(() => expect(amapMocks.Map).toHaveBeenCalledTimes(1));
+    const transportPlan = {
+      source: 'transport-api', freshness: 'live-query', sourceLabel: '高德动态公交规划', generatedAt: new Date().toISOString(),
+      isRealtime: false, totalMinutes: 40, totalDistanceKm: 6, summary: '动态路线', notices: [],
+      segments: [
+        { id: 'segment-1', from: 'A', to: 'B', departureTime: '09:00', arrivalTime: '09:20', durationMinutes: 20, distanceKm: 3, mode: '公交', costEstimate: '¥2', instruction: '乘车', liveStatus: '动态查询', legs: [{ id: 'leg-1', mode: 'bus', viaStops: [], durationMinutes: 20, distanceKm: 3, polyline: [] }] },
+        { id: 'segment-2', from: 'B', to: 'C', departureTime: '09:30', arrivalTime: '09:50', durationMinutes: 20, distanceKm: 3, mode: '网约车', costEstimate: '¥20', instruction: '打车', liveStatus: '动态查询', legs: [{ id: 'leg-2', mode: 'taxi', viaStops: [], durationMinutes: 20, distanceKm: 3, polyline: [[114.3, 30.5], [114.32, 30.52]] }] },
+      ],
+    } as TransportPlanResponse;
+    view.rerender(<RouteMap route={route} transportPlan={transportPlan} {...common} onSelectPoint={() => undefined} />);
+
+    await waitFor(() => expect(view.getByText('高德真实驾车路线')).toBeInTheDocument());
+    expect(view.queryByText('动态公交/地铁路线')).not.toBeInTheDocument();
+  });
 });

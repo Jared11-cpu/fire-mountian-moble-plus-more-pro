@@ -213,7 +213,17 @@ export function RouteMap({
       let plannedPath: Array<[number, number]> = [];
       let plannedPaths: Array<Array<[number, number]>> = [];
       let backendFailure: DrivingSearchFailure | undefined;
-      try {
+      // 只有一个地点（例如手账里只完成了一站）时无需道路规划，但地图和标记仍要显示，不能整张地图消失。
+      const singlePoint = route.points.length < 2;
+      if (singlePoint) {
+        publish({
+          status: "planned",
+          source: "estimate",
+          distanceKm: 0,
+          message: "只有一个地点，地图只显示位置，不需要道路路线。",
+        });
+      }
+      if (!singlePoint) try {
         const routeResult = await planBackendDrivingRoute(route.points);
         plannedPath = routeResult.path;
         plannedPaths = routeResult.paths?.length
@@ -265,7 +275,7 @@ export function RouteMap({
         const amapPoints = await Promise.all(
           route.points.map((point) => convertGpsPoint(AMap, point)),
         );
-        if (plannedPath.length < 2) {
+        if (!singlePoint && plannedPath.length < 2) {
           const browserRouteResult = await planAmapDrivingRoute(
             AMap,
             amapPoints,
@@ -385,11 +395,19 @@ export function RouteMap({
   useEffect(() => {
     const map = mapRef.current;
     const AMap = window.AMap;
-    const liveSegments =
+    // 只有每一段都带真实线形时才用分段交通线替换整条道路路线；
+    // 否则（例如只有打车段有坐标）会把完整道路换成零星短线，地图看起来"只有点没有路线"。
+    const segmentsWithGeometry =
       transportPlan?.source === "transport-api"
         ? transportPlan.segments.filter((segment) =>
             segment.legs.some((leg) => leg.polyline.length > 1),
           )
+        : [];
+    const liveSegments =
+      transportPlan &&
+      segmentsWithGeometry.length > 0 &&
+      segmentsWithGeometry.length === transportPlan.segments.length
+        ? segmentsWithGeometry
         : [];
     if (liveSegments.length) {
       setStatus("planned");
@@ -581,7 +599,8 @@ export function RouteMap({
   const failed = status !== "loading" && status !== "planned";
   const usingTransitGeometry =
     transportPlan?.source === "transport-api" &&
-    transportPlan.segments.some((segment) =>
+    transportPlan.segments.length > 0 &&
+    transportPlan.segments.every((segment) =>
       segment.legs.some((leg) => leg.polyline.length > 1),
     );
   const displayedRasterPaths = usingTransitGeometry

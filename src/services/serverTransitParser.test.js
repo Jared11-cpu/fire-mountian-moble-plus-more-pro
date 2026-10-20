@@ -17,4 +17,14 @@ describe('Sites transit proxy parser', () => {
     expect(legs[0]).toMatchObject({ mode: 'walk', instructions: ['沿江汉路步行300米'], roadNames: ['江汉路'] });
     expect(legs[1]).toMatchObject({ mode: 'subway', lineName: '轨道交通2号线', departureStop: '江汉路', arrivalStop: '洪山广场', entrance: 'C口', exit: 'A口', viaStops: ['循礼门'], serviceStartTime: '06:00', serviceEndTime: '23:00' });
   });
+
+  it('reads AMap v5 transit geometry given as { polyline } objects', () => {
+    // 生产环境实测：v5 公交接口的步行与公交线形是对象，以前被解析成空数组，地图上只剩点没有线。
+    const legs = parseTransitLegs({ segments: [{
+      walking: { distance: '300', duration: '240', steps: [{ instruction: '步行300米', polyline: { polyline: '111.37,30.69;111.371,30.691' } }] },
+      bus: { buslines: [{ name: 'B353路专线', type: '普通公交线路', duration: '1200', distance: '6800', polyline: { polyline: '111.371,30.691;111.38,30.70;111.39,30.71' } }] },
+    }] }, 'seg');
+    expect(legs.map((leg) => leg.polyline.length)).toEqual([2, 3]);
+    expect(parsePolyline({ polyline: '111.1,30.1;111.2,30.2' })).toEqual([[111.1, 30.1], [111.2, 30.2]]);
+  });
 });
