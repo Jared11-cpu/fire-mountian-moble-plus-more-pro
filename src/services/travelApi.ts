@@ -130,7 +130,7 @@ export function describeCosts(budget: ReturnType<typeof buildBudgetContext>, poi
   const known = budget.knownTicketCosts.map((item) => `${item.name}：约 ${item.cost} 元/人（点位已标注价格）`);
   const estimated: string[] = [];
   if (budget.food.estimatedSpend !== null) {
-    estimated.push(`餐饮约 ${budget.food.estimatedSpend} 元/人：${budget.food.estimateNote}${budget.food.withinAllocation === false ? '，高于餐饮分配额度' : ''}`);
+    estimated.push(`餐饮约 ${budget.food.estimatedSpend} 元/人：${budget.food.estimateNote.replace(/。$/, '')}${budget.food.withinAllocation === false ? '，高于餐饮分配额度。' : '。'}`);
   }
   estimated.push('各项预算分配按总预算比例拆分，是计划额度，不是实际价格。');
   const missing: string[] = [];
