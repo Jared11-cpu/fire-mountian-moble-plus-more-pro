@@ -85,6 +85,21 @@ export function RouteMap({
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>();
   const markerRef = useRef<any[]>([]);
+  const lastFitRef = useRef<{ overlays: any[]; focused: boolean } | null>(null);
+  // 按地图实际尺寸留边：手机上地图很窄，顶部还压着工具栏，固定的大边距会把路线挤出可视区。
+  const fitMapTo = (map: any, overlays: any[], focused = false) => {
+    lastFitRef.current = { overlays, focused };
+    const width = container.current?.clientWidth ?? 1000;
+    const padding =
+      width < 640
+        ? focused
+          ? [96, 48, 40, 40]
+          : [88, 36, 32, 32]
+        : focused
+          ? [140, 110, 140, 110]
+          : [90, 90, 90, 90];
+    map.setFitView(overlays, false, padding);
+  };
   const overlayRef = useRef<any[]>([]);
   const focusOverlayRef = useRef<any[]>([]);
   const transportOverlayGroupsRef = useRef<
@@ -161,7 +176,14 @@ export function RouteMap({
     let timer = 0;
     const observer = new ResizeObserver(() => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => mapRef.current?.resize?.(), 120);
+      timer = window.setTimeout(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        map.resize?.();
+        // 抽屉展开/收起后地图可视区变了，重新把路线放回视野中央。
+        const last = lastFitRef.current;
+        if (last?.overlays.length) fitMapTo(map, last.overlays, last.focused);
+      }, 120);
     });
     observer.observe(target);
     return () => {
@@ -354,11 +376,7 @@ export function RouteMap({
         );
         overlayRef.current = addRoadPolylines(AMap, map, plannedPaths);
         window.requestAnimationFrame(() => map.resize?.());
-        map.setFitView(
-          [...overlayRef.current, ...markerRef.current],
-          false,
-          [90, 90, 90, 90],
-        );
+        fitMapTo(map, [...overlayRef.current, ...markerRef.current]);
         setLiveMapZoom(Number(map.getZoom?.() ?? 12));
         setMapAvailable(true);
       } catch (caught) {
@@ -432,11 +450,7 @@ export function RouteMap({
       overlayRef.current = addRoadPolylines(AMap, map, rasterPaths);
     }
     map.resize?.();
-    map.setFitView(
-      [...overlayRef.current, ...markerRef.current],
-      false,
-      [90, 90, 90, 90],
-    );
+    fitMapTo(map, [...overlayRef.current, ...markerRef.current]);
   }, [mapAvailable, rasterPaths, transportSignature]);
 
   useEffect(() => {
@@ -559,12 +573,12 @@ export function RouteMap({
       const focusedOverlays =
         focused?.flatMap((entry) => [entry.outline, entry.line]) ?? [];
       map.resize?.();
-      map.setFitView(
+      fitMapTo(
+        map,
         focusedOverlays.length
           ? focusedOverlays
           : [...overlayRef.current, ...markerRef.current],
-        false,
-        focusedOverlays.length ? [140, 110, 140, 110] : [90, 90, 90, 90],
+        focusedOverlays.length > 0,
       );
       return;
     }
@@ -582,13 +596,9 @@ export function RouteMap({
         displayedFocusedPath,
       );
       map.resize?.();
-      map.setFitView(focusOverlayRef.current, false, [140, 110, 140, 110]);
+      fitMapTo(map, focusOverlayRef.current, true);
     } else {
-      map.setFitView(
-        [...overlayRef.current, ...markerRef.current],
-        false,
-        [90, 90, 90, 90],
-      );
+      fitMapTo(map, [...overlayRef.current, ...markerRef.current]);
     }
   }, [
     focusedTransportSegmentId,
@@ -623,12 +633,17 @@ export function RouteMap({
           : route.points.map(
               (point) => [point.lng, point.lat] as [number, number],
             );
-    const bounds = getCoordinateBounds(coordinates);
-    const center: [number, number] = [
-      (bounds.minLng + bounds.maxLng) / 2,
-      (bounds.minLat + bounds.maxLat) / 2,
-    ];
-    map.setZoomAndCenter?.(rasterZoomForBounds(bounds), center, false, 350);
+    const last = lastFitRef.current;
+    if (last?.overlays.length) {
+      fitMapTo(map, last.overlays, last.focused);
+      return;
+    }
+    const view = fitRasterView(
+      getCoordinateBounds(coordinates),
+      container.current?.clientWidth ?? 1000,
+      container.current?.clientHeight ?? 700,
+    );
+    map.setZoomAndCenter?.(view.zoom, [view.lng, view.lat], false, 350);
   };
 
   return (
@@ -1099,15 +1114,31 @@ function GaodeRasterRouteMap({
         ? fullRoadCoordinates
         : points.map((point) => [point.lng, point.lat] as [number, number]);
   const bounds = getCoordinateBounds(focusCoordinates);
-  const fittedView = {
-    zoom:
-      focusPath.length > 1
-        ? rasterZoomForBounds(bounds)
-        : rasterZoomForBounds(bounds),
-    lng: (bounds.minLng + bounds.maxLng) / 2,
-    lat: (bounds.minLat + bounds.maxLat) / 2,
-  };
-  const fitSignature = `${route.id}:${focusCoordinates.map(([lng, lat]) => `${lng},${lat}`).join(";")}`;
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 1000, height: 700 });
+  useEffect(() => {
+    const target = viewportRef.current;
+    if (!target || typeof ResizeObserver === "undefined") return;
+    let timer = 0;
+    const measure = () =>
+      setViewport({
+        width: Math.round(target.clientWidth) || 1000,
+        height: Math.round(target.clientHeight) || 700,
+      });
+    measure();
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(measure, 120);
+    });
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, []);
+  // 按地图实际可见尺寸选缩放级别和中心：手机上只有约 390px 宽，顶部还压着工具栏。
+  const fittedView = fitRasterView(bounds, viewport.width, viewport.height);
+  const fitSignature = `${route.id}:${viewport.width}x${viewport.height}:${focusCoordinates.map(([lng, lat]) => `${lng},${lat}`).join(";")}`;
   const [view, setView] = useState(fittedView);
   const pointerPositions = useRef(new Map<number, { x: number; y: number }>());
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -1191,24 +1222,24 @@ function GaodeRasterRouteMap({
     const world = lngLatToWorld(point.lng, point.lat, zoom);
     return {
       point,
-      x: world.x - centerWorld.x + 500,
-      y: world.y - centerWorld.y + 350,
+      x: world.x - centerWorld.x + RASTER_CENTER_X,
+      y: world.y - centerWorld.y + RASTER_CENTER_Y,
     };
   });
   const projectedRoads = roadPaths.map((roadPath) =>
     roadPath.map(([lng, lat]) => {
       const world = lngLatToWorld(lng, lat, zoom);
       return {
-        x: world.x - centerWorld.x + 500,
-        y: world.y - centerWorld.y + 350,
+        x: world.x - centerWorld.x + RASTER_CENTER_X,
+        y: world.y - centerWorld.y + RASTER_CENTER_Y,
       };
     }),
   );
   const projectedFocus = focusPath.map(([lng, lat]) => {
     const world = lngLatToWorld(lng, lat, zoom);
     return {
-      x: world.x - centerWorld.x + 500,
-      y: world.y - centerWorld.y + 350,
+      x: world.x - centerWorld.x + RASTER_CENTER_X,
+      y: world.y - centerWorld.y + RASTER_CENTER_Y,
     };
   });
   const hasRealRoad = projectedRoads.some((roadPath) => roadPath.length > 1);
@@ -1221,13 +1252,14 @@ function GaodeRasterRouteMap({
     const dy = Math.floor(index / 7) - 2;
     const x = tileCenter.x + dx;
     const y = tileCenter.y + dy;
-    const originX = x * 256 - centerWorld.x + 500;
-    const originY = y * 256 - centerWorld.y + 350;
+    const originX = x * 256 - centerWorld.x + RASTER_CENTER_X;
+    const originY = y * 256 - centerWorld.y + RASTER_CENTER_Y;
     return { x, y, originX, originY, server: (Math.abs(x + y) % 4) + 1 };
   });
 
   return (
     <div
+      ref={viewportRef}
       aria-label="可缩放和拖动的高德路线地图"
       role="application"
       tabIndex={0}
@@ -1266,7 +1298,8 @@ function GaodeRasterRouteMap({
         }
       }}
     >
-      <div className="absolute left-1/2 top-1/2 h-[760px] w-[1120px] -translate-x-1/2 -translate-y-1/2">
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{ width: RASTER_STAGE_WIDTH, height: RASTER_STAGE_HEIGHT }}>
         {tiles.map((tile) => (
           <img
             key={`${tile.x}-${tile.y}`}
@@ -1283,7 +1316,7 @@ function GaodeRasterRouteMap({
           />
         ))}
         <svg
-          viewBox="0 0 1000 700"
+          viewBox={`0 0 ${RASTER_STAGE_WIDTH} ${RASTER_STAGE_HEIGHT}`}
           className="pointer-events-none absolute inset-0 h-full w-full"
           aria-hidden="true"
         >
@@ -1589,17 +1622,44 @@ function getCoordinateBounds(points: Array<[number, number]>) {
   );
 }
 
-function rasterZoomForBounds(bounds: ReturnType<typeof getCoordinateBounds>) {
-  const span = Math.max(
-    bounds.maxLng - bounds.minLng,
-    (bounds.maxLat - bounds.minLat) * 1.3,
+// 瓦片、标记和路线共用同一个像素坐标系：舞台大小即 SVG 的 viewBox，中心即地图中心。
+const RASTER_STAGE_WIDTH = 1120;
+const RASTER_STAGE_HEIGHT = 760;
+const RASTER_CENTER_X = RASTER_STAGE_WIDTH / 2;
+const RASTER_CENTER_Y = RASTER_STAGE_HEIGHT / 2;
+
+export function fitRasterView(
+  bounds: ReturnType<typeof getCoordinateBounds>,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  const compact = viewportWidth < 640;
+  const padding = compact
+    ? { top: 88, bottom: 36, left: 32, right: 32 }
+    : { top: 70, bottom: 70, left: 70, right: 70 };
+  const width = Math.max(
+    120,
+    Math.min(viewportWidth, RASTER_STAGE_WIDTH) - padding.left - padding.right,
   );
-  if (span <= 0.012) return 15;
-  if (span <= 0.035) return 14;
-  if (span <= 0.09) return 13;
-  if (span <= 0.22) return 12;
-  if (span <= 0.55) return 11;
-  return 10;
+  const height = Math.max(
+    120,
+    Math.min(viewportHeight, RASTER_STAGE_HEIGHT) - padding.top - padding.bottom,
+  );
+  const min = lngLatToWorld(bounds.minLng, bounds.maxLat, 0);
+  const max = lngLatToWorld(bounds.maxLng, bounds.minLat, 0);
+  const spanX = Math.max(1e-9, max.x - min.x);
+  const spanY = Math.max(1e-9, max.y - min.y);
+  const zoom = clampRasterZoom(
+    Math.min(15, Math.floor(Math.log2(Math.min(width / spanX, height / spanY)))),
+  );
+  // 可视区中心比地图中心偏下（顶部工具栏更厚），把路线中心对准可视区中心。
+  const center = lngLatToWorld(
+    (bounds.minLng + bounds.maxLng) / 2,
+    (bounds.minLat + bounds.maxLat) / 2,
+    zoom,
+  );
+  const shiftY = (padding.top - padding.bottom) / 2;
+  return { zoom, ...worldToLngLat(center.x, center.y - shiftY, zoom) };
 }
 
 function lngLatToWorld(lng: number, lat: number, zoom: number) {
