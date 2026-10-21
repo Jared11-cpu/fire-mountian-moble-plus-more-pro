@@ -398,6 +398,7 @@ function syncPlanTargetBudget(plan: TripPlan, request: TripRequest): TripPlan {
 
 function applyPersonalizedRoute(plan: TripPlan, recommended: RoutePoint[]): TripPlan {
   const start = plan.route.startPoint;
+  // 景点顺序在 travelApi.recommendAttractions 里已经按地理位置排好；排程、餐厅、分析用的是同一个顺序，这里不能再换。
   const uniqueRecommended = recommended.filter((point, index, rows) => point.id !== start.id && rows.findIndex((candidate) => candidate.id === point.id) === index);
   const source = [start, ...uniqueRecommended].map((point, index) => ({ ...point, day: index === 0 ? 1 : Math.min(plan.requestSnapshot.days, Math.ceil(index / Math.max(1, Math.ceil(uniqueRecommended.length / plan.requestSnapshot.days)))) }));
   const points = calculateTimeline(source, plan.settings.departureTime);

@@ -361,6 +361,53 @@ export function decodeSharePlan(encoded: string): TripPlan {
   return { ...payload.plan, requestSnapshot: normalizeRequest(payload.request) };
 }
 
+type GeoPoint = { lat: number; lng: number };
+
+function geoDistanceKm(a: GeoPoint, b: GeoPoint) {
+  const kmPerDegLat = 111.32;
+  const dy = (a.lat - b.lat) * kmPerDegLat;
+  const dx = (a.lng - b.lng) * kmPerDegLat * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180);
+  return Math.hypot(dx, dy);
+}
+
+function openPathLength(path: GeoPoint[]) {
+  let total = 0;
+  for (let index = 0; index < path.length - 1; index += 1) total += geoDistanceKm(path[index], path[index + 1]);
+  return total;
+}
+
+// 景点原本按 AI 打分顺序排列，地理上来回折返，地图上就是一团交叉的线。
+// 这里从起点出发先按最近邻排一遍，再用 2-opt 反复消除交叉，得到一条不折返的游览顺序（起点固定在第一位）。
+export function orderPointsGeographically<T extends GeoPoint>(start: GeoPoint, points: T[]): T[] {
+  if (points.length < 2) return [...points];
+  const remaining = [...points];
+  const path: GeoPoint[] = [start];
+  while (remaining.length) {
+    const last = path[path.length - 1];
+    let best = 0;
+    for (let index = 1; index < remaining.length; index += 1) {
+      if (geoDistanceKm(last, remaining[index]) < geoDistanceKm(last, remaining[best])) best = index;
+    }
+    path.push(remaining.splice(best, 1)[0] as GeoPoint);
+  }
+  let improved = true;
+  let guard = 0;
+  while (improved && guard < 50) {
+    improved = false;
+    guard += 1;
+    for (let i = 1; i < path.length - 1; i += 1) {
+      for (let j = i + 1; j < path.length; j += 1) {
+        const candidate = [...path.slice(0, i), ...path.slice(i, j + 1).reverse(), ...path.slice(j + 1)];
+        if (openPathLength(candidate) + 1e-9 < openPathLength(path)) {
+          path.splice(0, path.length, ...candidate);
+          improved = true;
+        }
+      }
+    }
+  }
+  return path.slice(1) as T[];
+}
+
 export function updatePlanDates(plan: TripPlan, request: TripRequest): TripPlan {
   return { ...plan, requestSnapshot: request, dailyRecords: Array.from({ length: request.days }, (_, index) => ({ ...(plan.dailyRecords[index] ?? { day: index + 1, note: '', checkedPointIds: [] }), day: index + 1, date: addDaysIso(request.startDate, index) })), updatedAt: new Date().toISOString() };
 }

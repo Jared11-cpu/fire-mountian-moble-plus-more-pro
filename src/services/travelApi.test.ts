@@ -69,8 +69,10 @@ describe('travel backend integration', () => {
     const result = await enrichTripPlanWithBackend(plan, request as never);
     expect(result.analysis).toContain('武汉长江大桥');
     expect(result.schedule).toMatchObject({ departureTime: '07:45', safetyNotes: ['避免夜间赶路'] });
-    expect(result.routePoints?.[0]).toMatchObject({ name: '武汉长江大桥', lat: 30.55, lng: 114.288, imageUrl: 'https://aos-comment.amap.com/wuhan-bridge.jpg', imageCredit: { author: '高德地图地点相册' } });
-    expect(result.routePoints?.[0].reason).toContain('首页明确提出的必经地点');
+    // 景点顺序已按地理位置排列，必经地点不一定排在第一位，所以按名字找。
+    const bridge = result.routePoints?.find((point) => point.name === '武汉长江大桥');
+    expect(bridge).toMatchObject({ name: '武汉长江大桥', lat: 30.55, lng: 114.288, imageUrl: 'https://aos-comment.amap.com/wuhan-bridge.jpg', imageCredit: { author: '高德地图地点相册' } });
+    expect(bridge?.reason).toContain('首页明确提出的必经地点');
     expect(result.foods?.[0]).toMatchObject({ id: 'poi-1', name: '蔡林记吉庆街店', priceRange: '约 ¥28/人', dianpingUrl: 'https://www.dianping.com/shop/l3LoOn1gi2ggY01E', dianpingLinkType: 'direct', nearestPointName: '武汉长江大桥', distanceMeters: 860, analysisSource: 'qwen-amap' });
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([expect.stringContaining('/api/attractions/search'), '/api/ai/recommend', '/api/restaurants/guide', '/api/ai/analyze', '/api/ai/schedule']));
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toContain('/api/attractions/search?city=%E6%AD%A6%E6%B1%89&keywords=%E6%AD%A6%E6%B1%89%E9%95%BF%E6%B1%9F%E5%A4%A7%E6%A1%A5&pageSize=10&allTypes=1');
@@ -113,7 +115,8 @@ describe('travel backend integration', () => {
 
     const result = await enrichTripPlanWithBackend(plan, request as never);
 
-    expect(result.routePoints?.map((point) => point.name)).toEqual(['古隆中风景区', '襄阳古城', '中国唐城']);
+    // 三个地标都保留、重复的景区仍被去掉；顺序按地理位置从出发地排列（不再按 AI 打分顺序来回折返）。
+    expect(result.routePoints?.map((point) => point.name)).toEqual(['襄阳古城', '中国唐城', '古隆中风景区']);
   });
 
   it('searches restaurants along the final route and sends food prices and budget to the analysis', async () => {

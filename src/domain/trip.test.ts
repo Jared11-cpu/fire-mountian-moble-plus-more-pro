@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDaysIso, budgetTotal, buildFoodRecommendations, buildSocialCopy, calculateTimeline, daysBetween, decodeSharePlan, defaultTripRequest, encodeSharePlan, generateTripPlan, getSafeDianpingUrl, normalizePlanTimeline, parseLocalDate, parseTravelRequest, type PlannedRoutePoint } from './trip';
+import { addDaysIso, budgetTotal, buildFoodRecommendations, buildSocialCopy, calculateTimeline, daysBetween, decodeSharePlan, defaultTripRequest, encodeSharePlan, generateTripPlan, getSafeDianpingUrl, normalizePlanTimeline, orderPointsGeographically, parseLocalDate, parseTravelRequest, type PlannedRoutePoint } from './trip';
 import type { RoutePoint } from '../types/route';
 
 describe('buildFoodRecommendations', () => {
@@ -173,3 +173,28 @@ function point(id: string, name: string, lat: number, lng: number): RoutePoint {
   return { id, name, city: '恩施', lat, lng, type: id === 'station' ? 'start' : 'scenic', time: '', stayMinutes: 45, reason: '', photoTip: '', recordTip: '', transportMode: 'drive' };
 }
 function toMinutes(value: string) { const [hour, minute] = value.split(':').map(Number); return hour * 60 + minute; }
+
+describe('orderPointsGeographically', () => {
+  const p = (id: string, lng: number, lat: number) => ({ id, lng, lat });
+
+  it('removes back-and-forth zigzags so the route follows geography', () => {
+    // 宜昌：按 AI 打分顺序会来回折返（站→峡口→清江画廊(远南)→滨江公园→三峡人家→大坝）
+    const start = p('station', 111.37, 30.69);
+    const scored = [p('xiakou', 111.26, 30.77), p('qingjiang', 111.14, 30.47), p('binjiang', 111.29, 30.69), p('sanxiarenjia', 111.16, 30.79), p('dam', 111.04, 30.83)];
+    const ordered = orderPointsGeographically(start, scored);
+    const length = (list: Array<{ lng: number; lat: number }>) => list.slice(1).reduce((sum, point, index) => sum + Math.hypot((point.lng - list[index].lng) * 96, (point.lat - list[index].lat) * 111), 0);
+    expect(length([start, ...ordered])).toBeLessThan(length([start, ...scored]));
+    expect(ordered.map((item) => item.id).sort()).toEqual(scored.map((item) => item.id).sort());
+    expect(ordered[0].id).toBe('binjiang');
+  });
+
+  it('keeps every stop, keeps the start out of the result, and handles tiny inputs', () => {
+    const start = p('s', 114.3, 30.5);
+    expect(orderPointsGeographically(start, [])).toEqual([]);
+    expect(orderPointsGeographically(start, [p('a', 114.4, 30.6)]).map((item) => item.id)).toEqual(['a']);
+    const many = Array.from({ length: 10 }, (_, index) => p(`x${index}`, 114.2 + (index % 4) * 0.1, 30.4 + Math.floor(index / 4) * 0.1));
+    const ordered = orderPointsGeographically(start, many);
+    expect(ordered).toHaveLength(10);
+    expect(new Set(ordered.map((item) => item.id)).size).toBe(10);
+  });
+});

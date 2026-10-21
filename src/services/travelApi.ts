@@ -1,4 +1,4 @@
-import { buildFoodRecommendations, calculateTimeline, type FoodRecommendation, type PlannedRoutePoint, type TripPlan, type TripRequest, type TrustNotes } from '../domain/trip';
+import { buildFoodRecommendations, calculateTimeline, orderPointsGeographically, type FoodRecommendation, type PlannedRoutePoint, type TripPlan, type TripRequest, type TrustNotes } from '../domain/trip';
 import type { RoutePoint } from '../types/route';
 
 export type AiTravelRequest = {
@@ -226,7 +226,11 @@ async function recommendAttractions(request: TripRequest, signal?: AbortSignal):
   const targetCount = Math.min(10, Math.max(4, request.days * 3));
   const ordered = [...new Map([...requiredRows, ...anchorRows, ...ranked, ...candidates].map((item) => [String(item.id), item])).values()];
   const selected = pickGeographicallyDiverse(ordered, targetCount, required);
-  return selected.map((item, index) => toRoutePoint(item, request, index));
+  // 入选的景点按 AI 打分排序，地理上来回折返，地图上就是一团交叉的线。入选之后按地理位置从出发地重新排成不折返的顺序，
+  // 再分天（toRoutePoint 按序号分天，所以每天的景点在地理上是连着的）。排程、餐厅、分析都用这个顺序。
+  const geo = selected.map((item) => ({ item, lng: Number(item.location.lng), lat: Number(item.location.lat) }));
+  const walkingOrder = orderPointsGeographically({ lng: request.origin.lng, lat: request.origin.lat }, geo).map((entry) => entry.item);
+  return walkingOrder.map((item, index) => toRoutePoint(item, request, index));
 }
 
 function validPoi(item: Record<string, any> | undefined | null) {
