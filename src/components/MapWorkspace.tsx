@@ -854,7 +854,7 @@ function Stops({
               }}
               className="group relative block h-36 w-full overflow-hidden text-left"
             >
-              <img
+              <img loading="lazy" decoding="async"
                 src={coverUrl}
                 alt={`${point.name}风景封面`}
                 className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.035]"
@@ -1807,7 +1807,7 @@ function DailyTaskEditor({
       </button>
       <section className="overflow-hidden rounded-[1.75rem] border border-ink/10 bg-white shadow-[0_18px_48px_rgba(18,34,42,.11)]">
         <div className="relative h-36 overflow-hidden">
-          <img
+          <img loading="lazy" decoding="async"
             src={point.imageUrl}
             alt={`${point.name}实景`}
             className="h-full w-full object-cover"
@@ -1899,7 +1899,7 @@ function DailyTaskEditor({
             <div className="grid grid-cols-3 gap-2">
               {previews.map((url, index) => (
                 <div key={url} className="relative">
-                  <img
+                  <img loading="lazy" decoding="async"
                     src={url}
                     alt={`待保存照片${index + 1}`}
                     className="aspect-square w-full rounded-xl object-cover"
