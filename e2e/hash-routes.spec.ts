@@ -27,16 +27,15 @@ test('homepage opens on the cinematic city showcase and enters Planner on demand
   await expect(page.getByRole('button', { name: '生成我的武汉行程' })).toBeVisible();
 });
 
-test('mobile homepage keeps the immersive navigation and carousel operable', async ({ page }) => {
+test('mobile homepage keeps the bottom navigation and carousel operable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#/');
-  await expect(page.getByLabel('当前城市编号 01')).toBeVisible();
-  await expect(page.getByRole('button', { name: '打开导航菜单' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '手机底部导航' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '宜昌' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
-  await page.getByRole('button', { name: '下一座城市' }).click();
+  await page.getByRole('button', { name: '查看武汉' }).click();
   await expect(page.getByRole('heading', { name: '武汉' })).toBeVisible();
-  await expect(page.getByLabel('当前城市编号 02')).toBeVisible();
+  await expect(page.getByRole('button', { name: '查看武汉' })).toHaveAttribute('aria-current', 'true');
 });
 
 test('HashRouter direct refresh and browser history', async ({ page }) => {
