@@ -187,6 +187,7 @@ export function MapWorkspace({
     string | null
   >(null);
   const [transportLoading, setTransportLoading] = useState(true);
+  const transportKeyRef = useRef("");
   const [transportStrategy, setTransportStrategy] =
     useState<TransitStrategy>("recommended");
   const transportPlan =
@@ -211,11 +212,18 @@ export function MapWorkspace({
         { signal },
       )
         .then((result) => {
+          // 每 90 秒的静默刷新：查询时间戳以外的内容没变就不更新状态，避免整页（含地图）无谓重绘，
+          // 也不会把用户正在展开查看的交通段重置掉。
+          const key = JSON.stringify(result, (name, value) =>
+            name === "generatedAt" ? undefined : value,
+          );
+          if (silent && key === transportKeyRef.current) return;
+          transportKeyRef.current = key;
           setTransportComparison(result);
           setTransportChoiceId((current) =>
             current === "transit" ? "transit" : result.recommendedOptionId,
           );
-          setFocusedTransportSegmentId(null);
+          if (!silent) setFocusedTransportSegmentId(null);
         })
         .finally(() => {
           if (!signal?.aborted) setTransportLoading(false);
