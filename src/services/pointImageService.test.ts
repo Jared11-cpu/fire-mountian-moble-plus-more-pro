@@ -9,9 +9,10 @@ describe('pointImageService', () => {
     const university = getCuratedPointCover('武汉大学');
     const bridge = getCuratedPointCover('武汉长江大桥');
 
-    expect(decodeURIComponent(station?.imageUrl ?? '')).toContain('Wuhan Railway Station');
-    expect(decodeURIComponent(university?.imageUrl ?? '')).toContain('Wuhan University');
-    expect(decodeURIComponent(bridge?.imageUrl ?? '')).toContain('Wuhan Yangtze Bridge');
+    // 图片地址可能是本站镜像的哈希文件名，所以用署名里的原始页面来确认是哪一张。
+    expect(decodeURIComponent(station?.imageCredit.sourceUrl ?? '')).toContain('Wuhan_Railway_Station');
+    expect(decodeURIComponent(university?.imageCredit.sourceUrl ?? '')).toContain('Wuhan_University');
+    expect(decodeURIComponent(bridge?.imageCredit.sourceUrl ?? '')).toContain('Wuhan_Yangtze_Bridge');
     expect(new Set([station?.imageUrl, university?.imageUrl, bridge?.imageUrl]).size).toBe(3);
   });
 

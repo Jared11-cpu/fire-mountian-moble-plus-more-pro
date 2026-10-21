@@ -1,23 +1,24 @@
+import { commonsImageUrl } from './commonsMirror';
 import type { CityName } from './mockData';
 import type { RoutePoint, SmartRoute } from '../types/route';
 
 const yichangStationMedia = {
-  imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/3c/Platforms_of_Yichang_East_Railway_Station.JPG',
+  imageUrl: commonsImageUrl('Platforms of Yichang East Railway Station.JPG'),
   imageCredit: { author: 'CaiDie', license: 'CC BY-SA 3.0', sourceUrl: 'https://commons.wikimedia.org/wiki/File:Platforms_of_Yichang_East_Railway_Station.JPG' },
 };
 const threeGorgesMedia = {
-  imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Three_Gorges_Dam.jpg',
+  imageUrl: commonsImageUrl('Three Gorges Dam.jpg'),
   imageCredit: { author: 'Dan Kamminga', license: 'CC BY-SA 2.0', sourceUrl: 'https://commons.wikimedia.org/wiki/File:Three_Gorges_Dam.jpg' },
 };
 const yichangRiverMedia = {
-  imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/41/%E4%BB%8E%E6%BB%A8%E6%B1%9F%E5%85%AC%E5%9B%AD%E7%9C%8B%E5%AF%B9%E9%9D%A2%E7%9A%84%E9%9B%A8_-_panoramio.jpg',
+  imageUrl: commonsImageUrl('从滨江公园看对面的雨 - panoramio.jpg'),
   imageCredit: { author: 'Danny Luo', license: 'CC BY-SA 3.0', sourceUrl: 'https://commons.wikimedia.org/wiki/File:%E4%BB%8E%E6%BB%A8%E6%B1%9F%E5%85%AC%E5%9B%AD%E7%9C%8B%E5%AF%B9%E9%9D%A2%E7%9A%84%E9%9B%A8_-_panoramio.jpg' },
 };
 
 function commonsMedia(fileName: string): Pick<RoutePoint, 'imageUrl' | 'imageCredit'> {
   const normalized = fileName.replace(/ /g, '_');
   return {
-    imageUrl: `https://commons.wikimedia.org/wiki/Special:Redirect/file/${encodeURIComponent(fileName)}?width=1280`,
+    imageUrl: commonsImageUrl(fileName),
     imageCredit: {
       author: 'Wikimedia Commons',
       license: '许可见来源页',

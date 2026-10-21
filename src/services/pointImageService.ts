@@ -1,3 +1,4 @@
+import { commonsImageUrl } from '../data/commonsMirror';
 import type { RoutePoint } from '../types/route';
 
 export type PointCover = Pick<RoutePoint, 'imageUrl' | 'imageCredit'> & { imageUrl: string; imageCredit: NonNullable<RoutePoint['imageCredit']> };
@@ -5,7 +6,7 @@ export type PointCover = Pick<RoutePoint, 'imageUrl' | 'imageCredit'> & { imageU
 function commonsCover(fileName: string, author = 'Wikimedia Commons', license = '许可见来源页'): PointCover {
   const fileTitle = fileName.replace(/ /g, '_');
   return {
-    imageUrl: `https://commons.wikimedia.org/wiki/Special:Redirect/file/${encodeURIComponent(fileName)}?width=1280`,
+    imageUrl: commonsImageUrl(fileName),
     imageCredit: {
       author,
       license,
