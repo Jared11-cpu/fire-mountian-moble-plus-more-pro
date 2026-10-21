@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, LocateFixed, Loader2, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, LocateFixed, Loader2, MoreHorizontal, RefreshCw, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { examples } from '../data/mockData';
 import { cityShowcaseIndex, cityShowcaseItems } from '../data/cityShowcaseData';
 import { DIETARY_RESTRICTIONS, INTERESTS, SPECIAL_NEEDS, TRAVELERS, todayIso, type DietaryRestriction, type Interest, type SpecialNeed, type TravelerType } from '../domain/trip';
@@ -16,6 +16,8 @@ export function PlannerPage() {
   const [locating, setLocating] = useState(false);
   const [resolvingOrigin, setResolvingOrigin] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [conditionsOpen, setConditionsOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [originInput, setOriginInput] = useState(request.origin.name);
   const [confirmedOriginName, setConfirmedOriginName] = useState(request.origin.source === 'manual' ? '' : request.origin.name);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -43,9 +45,16 @@ export function PlannerPage() {
     return () => window.removeEventListener('planner:start', start);
   }, []);
 
+  // 用 body 类名代替 CSS :has()，避免每次 DOM 变化都触发整页样式重算。
+  const showingResult = resultMode && Boolean(plan);
+  useEffect(() => {
+    document.body.classList.toggle('is-planner-result', showingResult);
+    return () => document.body.classList.remove('is-planner-result');
+  }, [showingResult]);
+
   const createPlan = async () => {
     if (generating) return;
-    if (!originConfirmed) { notify('请先确认手动出发地，确保已取得真实坐标。', 'error'); return; }
+    if (!originConfirmed) { setConditionsOpen(true); notify('请先确认手动出发地，确保已取得真实坐标。', 'error'); return; }
     if (startDateIsPast && !pastDateConfirmed) { notify('出发日期已经过去，请先改为实际出发日期，或确认仍按原日期生成。', 'error'); return; }
     setGenerating(true);
     try {
@@ -89,6 +98,8 @@ export function PlannerPage() {
     } finally { setResolvingOrigin(false); }
   };
 
+  const conditionsSummary = [request.travelerType, `${request.days} 天`, `¥${request.budget}`, request.interests.slice(0, 2).join('、')].filter(Boolean).join(' · ');
+
   const toggle = <T extends string>(field: 'interests' | 'dietaryRestrictions' | 'specialNeeds', item: T) => {
     const values = request[field] as readonly string[];
     updateRequest({ [field]: values.includes(item) ? values.filter((value) => value !== item) : [...values, item] });
@@ -110,9 +121,10 @@ export function PlannerPage() {
 
             <div className="planner-examples"><span>快速写入</span>{examples.slice(0, 4).map((example) => <button type="button" key={example.label} onClick={() => { updateRequest({ freeText: example.prompt }); window.setTimeout(() => parseText(example.prompt), 0); }}>{example.label}</button>)}</div>
 
-            <section className="planner-more-conditions" aria-labelledby="planner-conditions-title">
-              <header className="planner-more-heading"><SlidersHorizontal aria-hidden="true" /><span><h3 id="planner-conditions-title">完善旅行条件</h3><small>人群、天数、预算、日期与兴趣</small></span></header>
-              <div className="planner-more-body">
+            <section className={`planner-more-conditions${conditionsOpen ? ' is-open' : ''}`} aria-labelledby="planner-conditions-title">
+              <header className="planner-more-heading"><SlidersHorizontal aria-hidden="true" /><span><h3 id="planner-conditions-title">完善旅行条件</h3><small>人群、天数、预算、日期与兴趣</small></span>
+                <button type="button" className="planner-conditions-toggle" aria-expanded={conditionsOpen} aria-controls="planner-conditions-body" onClick={() => setConditionsOpen((value) => !value)}><span>{conditionsSummary}</span><ChevronDown aria-hidden="true" /></button></header>
+              <div id="planner-conditions-body" className="planner-more-body">
                 <div className="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
                   <Field label="出发地" htmlFor="trip-origin"><div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2"><input id="trip-origin" value={originInput} onChange={(event) => { setOriginInput(event.target.value); setConfirmedOriginName(''); }} placeholder="输入车站、酒店、道路或完整地址" className="planner-input min-w-0" /><button type="button" aria-label="确认手动出发地" disabled={resolvingOrigin || !originInput.trim()} onClick={confirmManualOrigin} className="planner-location-button">{resolvingOrigin ? <Loader2 className="animate-spin" /> : <Check />}<span>{resolvingOrigin ? '解析中' : '确认'}</span></button><button type="button" aria-label="使用当前定位" disabled={locating} onClick={locate} className="planner-location-button">{locating ? <Loader2 className="animate-spin" /> : <LocateFixed />}<span>{locating ? '定位中' : '当前定位'}</span></button></div>{originConfirmed ? <p className="planner-location-status" role="status">{request.origin.source === 'browser' ? 'GPS 起点已锁定' : request.origin.source === 'manual' ? '手动起点已解析' : '默认起点已就绪'}：{request.origin.name}</p> : <p className="planner-location-status text-tower" role="status">请输入具体地点并点击“确认”，解析真实坐标后才能生成。</p>}</Field>
                   <Field label="出行人群" htmlFor="traveler-type"><select id="traveler-type" value={request.travelerType} onChange={(event) => updateRequest({ travelerType: event.target.value as TravelerType })} className="planner-input">{TRAVELERS.map((item) => <option key={item}>{item}</option>)}</select></Field>
@@ -136,8 +148,15 @@ export function PlannerPage() {
             <div className="planner-result-toolbar flex flex-col justify-between gap-3 rounded-[1.25rem] bg-white/75 px-4 py-3 shadow-sm ring-1 ring-ink/5 backdrop-blur md:flex-row md:items-center md:px-5">
               <h2 className="font-display text-2xl font-black text-ink">{plan.route.title}</h2>
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => { if (window.confirm('重置当前方案？真实手账和照片会保留。')) { resetPlan(); setResultMode(false); } }} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-ink shadow-sm"><RotateCcw className="h-4 w-4" />重置方案</button>
-                <button type="button" onClick={() => setResultMode(false)} className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-black text-white"><ArrowLeft className="h-4 w-4" />返回修改</button>
+                <button type="button" onClick={() => { if (window.confirm('重置当前方案？真实手账和照片会保留。')) { resetPlan(); setResultMode(false); } }} className="planner-toolbar-reset inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-ink shadow-sm"><RotateCcw className="h-4 w-4" />重置方案</button>
+                <button type="button" onClick={() => setResultMode(false)} className="planner-toolbar-back inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-black text-white"><ArrowLeft className="h-4 w-4" /><span>返回修改</span></button>
+              </div>
+              <div className="planner-toolbar-more">
+                <button type="button" aria-label="更多操作" aria-expanded={actionsOpen} aria-haspopup="menu" onClick={() => setActionsOpen((value) => !value)}><MoreHorizontal aria-hidden="true" /></button>
+                {actionsOpen && <div role="menu" className="planner-toolbar-menu">
+                  <button type="button" role="menuitem" disabled={isReplanning} onClick={() => { setActionsOpen(false); replan(); }}><RefreshCw aria-hidden="true" />重新规划</button>
+                  <button type="button" role="menuitem" onClick={() => { setActionsOpen(false); if (window.confirm('重置当前方案？真实手账和照片会保留。')) { resetPlan(); setResultMode(false); } }}><RotateCcw aria-hidden="true" />重置方案</button>
+                </div>}
               </div>
             </div>
             <MapWorkspace route={plan.route} plan={plan.content} selectedPointId={selectedPointId} activePointIndex={Math.max(0, plan.route.points.findIndex((item) => item.id === selectedPointId))} navigating={false} imageUrl={selectedCity.imageUrl} onSelectPoint={(point: RoutePoint) => setSelectedPointId(point.id)} onRegenerate={replan} onSimulateNavigation={() => notify('本功能仅演示路线顺序，不冒充实时导航。')} />

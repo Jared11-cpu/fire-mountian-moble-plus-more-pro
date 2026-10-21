@@ -483,7 +483,7 @@ function safeScheduleMinutes(value: string) {
 function GlobalStatus({ state }: { state: TripState }) {
   return (
     <>
-      <div className="fixed bottom-4 left-4 z-[70] rounded-full border border-white/70 bg-white/90 px-3 py-2 text-xs font-black text-ink/65 shadow-soft backdrop-blur" aria-live="polite">
+      <div className={`save-status${state.saveStatus === 'error' ? ' is-error' : ''} fixed bottom-4 left-4 z-[70] rounded-full border border-white/70 bg-white/90 px-3 py-2 text-xs font-black text-ink/65 shadow-soft backdrop-blur`} aria-live="polite">
         {state.saveStatus === 'saving' ? '保存中…' : state.saveStatus === 'saved' ? '已保存' : state.saveStatus === 'error' ? '保存失败' : '尚未保存'}
       </div>
       <div className="app-toast-region pointer-events-none fixed inset-x-4 top-24 z-[80] flex justify-center" aria-live="polite" aria-atomic="true">

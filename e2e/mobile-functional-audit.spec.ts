@@ -63,7 +63,21 @@ async function createMobilePlan(page: Page, navigate = true) {
   } catch {
     throw new Error(`方案未生成：${(await page.locator('body').innerText()).slice(-500)}`);
   }
-  await expect(page.getByRole('tab')).toHaveCount(7);
+  // 手机端：4 个模块分组 + 当前分组内的小分段
+  await expect(page.getByRole('tablist', { name: '行程功能模块' }).getByRole('tab')).toHaveCount(4);
+}
+
+const mobileModules: Record<string, [string, string?]> = {
+  概览: ['概览', '方案'], 路线: ['行程', '路线'], 行程记录: ['行程', '每日记录'], 天气: ['概览', '天气'],
+  交通: ['交通'], 美食: ['吃&花费', '美食'], 预算: ['吃&花费', '预算'],
+};
+
+async function openModule(page: Page, label: string) {
+  const [group, sub] = mobileModules[label];
+  await page.getByRole('tablist', { name: '行程功能模块' }).getByRole('tab', { name: group }).click();
+  if (sub) await page.getByRole('tablist', { name: `${group}分类` }).getByRole('tab', { name: sub }).click();
+  const selected = page.getByRole('tablist', { name: sub ? `${group}分类` : '行程功能模块' }).getByRole('tab', { name: sub ?? group });
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
 }
 
 for (const viewport of mobileViewports) {
@@ -74,10 +88,7 @@ for (const viewport of mobileViewports) {
     await createMobilePlan(page);
     await assertNoHorizontalOverflow(page);
 
-    for (const label of ['概览', '路线', '行程记录', '天气', '交通', '美食', '预算']) {
-      await page.getByRole('tab', { name: label }).click();
-      await expect(page.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
-    }
+    for (const label of ['概览', '路线', '行程记录', '天气', '交通', '美食', '预算']) await openModule(page, label);
     await page.screenshot({ path: `output/playwright/mobile-audit-${viewport.name}.png`, fullPage: false });
   });
 }
@@ -87,14 +98,17 @@ test('mobile planner controls, sheet states and editable modules work end to end
   await page.setViewportSize({ width: 390, height: 844 });
   await mockTravelServices(page);
   await page.goto('/#/planner');
+  await page.locator('.planner-conditions-toggle').click();
   await page.getByPlaceholder('输入车站、酒店、道路或完整地址').fill('宜昌东站');
   await page.getByRole('button', { name: '确认手动出发地' }).click();
   await expect(page.getByRole('status').filter({ hasText: '手动起点已解析' })).toBeVisible();
   await page.getByLabel('出行人群').selectOption('情侣');
   await page.getByLabel('天数').fill('2');
   await page.getByLabel('预算（元）').fill('600');
-  await page.getByLabel('开始日期').fill('2026-08-01');
-  await page.getByLabel('结束日期').fill('2026-08-02');
+  // 用一周后的日期，避免固定日期过期后触发“出发日期已过去”拦截
+  const isoDaysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  await page.getByLabel('开始日期').fill(isoDaysFromNow(7));
+  await page.getByLabel('结束日期').fill(isoDaysFromNow(8));
   await page.getByRole('button', { name: '自然风光' }).click();
   await page.getByRole('button', { name: '不吃辣' }).click();
   await createMobilePlan(page, false);
@@ -109,43 +123,43 @@ test('mobile planner controls, sheet states and editable modules work end to end
   await page.getByLabel('总览计划预算').press('Enter');
   await expect(page.getByLabel('总览计划预算')).toHaveValue('720');
 
-  await page.getByRole('tab', { name: '路线' }).click();
-  await expect(page.getByRole('heading', { name: '地点安排' })).toBeVisible();
+  await openModule(page, '路线');
+  await expect(page.getByLabel('我的安排').first()).toBeVisible();
   const arrangement = page.getByLabel('我的安排').first();
   await arrangement.fill('手机端编辑成功');
   await page.getByLabel('实际停留分钟').first().fill('35');
   await page.getByLabel('实际停留分钟').first().blur();
 
-  await page.getByRole('tab', { name: '行程记录' }).click();
+  await openModule(page, '行程记录');
   const completeButton = page.getByRole('button', { name: /完成.+/ }).first();
   await completeButton.click();
   await expect(page.getByRole('button', { name: /取消完成.+/ }).first()).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('第1天手记').fill('手机行程手记已保存');
 
-  await page.getByRole('tab', { name: '天气' }).click();
+  await openModule(page, '天气');
   await expect(page.getByText('接下来 8 小时')).toBeVisible();
-  await page.getByRole('tab', { name: '交通' }).click();
-  await expect(page.getByRole('heading', { name: '交通方案' })).toBeVisible();
+  await openModule(page, '交通');
+  await expect(page.getByRole('radio', { name: '驾车交通方式' })).toBeVisible();
   await page.getByRole('radio', { name: '驾车交通方式' }).click();
   await expect(page.getByRole('radio', { name: '驾车交通方式' })).toBeChecked();
   await page.getByRole('radio', { name: '公交 / 地铁交通方式' }).click();
   await expect(page.getByRole('radiogroup', { name: '公共交通路线偏好' })).toBeVisible();
   await page.getByRole('radio', { name: '时间短' }).click();
 
-  await page.getByRole('tab', { name: '美食' }).click();
+  await openModule(page, '美食');
   await expect(page.getByText('峡州小馆')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('link', { name: /峡州小馆/ })).toHaveAttribute('href', /dianping|amap/);
 
-  await page.getByRole('tab', { name: '预算' }).click();
+  await openModule(page, '预算');
   const amount = page.getByLabel('交通金额');
   await amount.fill('128');
   await amount.press('Enter');
   await page.getByRole('button', { name: /新增支出|新增预算条目/ }).click();
   await expect(page.getByLabel(/支出项目/)).toHaveCount(5);
 
-  await page.getByRole('tab', { name: '路线' }).click();
+  await openModule(page, '路线');
   await expect(page.getByLabel('我的安排').first()).toHaveValue('手机端编辑成功');
-  await page.getByRole('tab', { name: '行程记录' }).click();
+  await openModule(page, '行程记录');
   await expect(page.getByLabel('第1天手记')).toHaveValue('手机行程手记已保存');
 
   await page.getByRole('button', { name: '返回修改' }).click();
@@ -158,10 +172,11 @@ test('mobile home navigation, planning dialog and journal CRUD remain operable',
   await page.setViewportSize({ width: 390, height: 844 });
   await mockTravelServices(page);
   await page.goto('/#/');
-  await page.getByRole('button', { name: '打开导航菜单' }).click();
-  await expect(page.getByRole('button', { name: '关闭导航菜单' })).toBeVisible();
-  await page.getByRole('button', { name: '关闭导航菜单' }).click();
-  await page.getByRole('button', { name: '下一座城市' }).click();
+  const bottomNav = page.getByRole('navigation', { name: '手机底部导航' });
+  await bottomNav.getByRole('button', { name: '更多' }).click();
+  await expect(page.getByRole('menuitem', { name: '数据看板' })).toBeVisible();
+  await bottomNav.getByRole('button', { name: '更多' }).click();
+  await page.getByRole('button', { name: '查看武汉' }).click();
   await expect(page.getByRole('heading', { name: '武汉' })).toBeVisible();
   await page.getByRole('button', { name: /以武汉开始规划|开始规划/ }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();

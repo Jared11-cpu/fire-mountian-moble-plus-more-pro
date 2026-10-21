@@ -157,15 +157,16 @@ export function RouteMap({
   useEffect(() => {
     const target = container.current;
     if (!target || typeof ResizeObserver === "undefined") return;
-    let frame = 0;
+    // 手机抽屉拖动/展开时容器每帧都在变；等尺寸稳定后再让高德重绘一次，避免逐帧重绘卡顿。
+    let timer = 0;
     const observer = new ResizeObserver(() => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => mapRef.current?.resize?.());
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => mapRef.current?.resize?.(), 120);
     });
     observer.observe(target);
     return () => {
       observer.disconnect();
-      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -1539,7 +1540,7 @@ function MapInteractionControls({
   return (
     <div
       aria-label={label}
-      className="absolute right-3 top-3 z-40 flex flex-col overflow-hidden rounded-[1rem] border border-white/70 bg-white/94 text-ink shadow-[0_12px_28px_rgba(18,34,42,.18)] backdrop-blur"
+      className="map-zoom-controls absolute right-3 top-3 z-40 flex flex-col overflow-hidden rounded-[1rem] border border-white/70 bg-white/94 text-ink shadow-[0_12px_28px_rgba(18,34,42,.18)] backdrop-blur"
       onPointerDown={stopPointer}
       onDoubleClick={(event) => event.stopPropagation()}
     >

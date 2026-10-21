@@ -55,14 +55,15 @@ test('mobile result page keeps the map dominant and sheet usable', async ({ page
   expect(layout.globalHeaderVisible).toBe(false);
   expect(layout.mapHeight).toBeGreaterThan(580);
   expect(layout.sheetHeight).toBeGreaterThan(200);
-  await expect(page.getByRole('tab')).toHaveCount(7);
+  await expect(page.getByRole('tablist', { name: '行程功能模块' }).getByRole('tab')).toHaveCount(4);
   const tabBoxes = await page.getByRole('tab').evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().toJSON()));
   expect(tabBoxes.every((box) => box.left >= 0 && box.right <= 390)).toBe(true);
 
   await page.getByRole('button', { name: '展开概览详情' }).click();
   await page.screenshot({ path: 'output/playwright/mobile-redesign-half.png' });
+  await page.getByRole('tab', { name: '行程' }).click();
   await page.getByRole('tab', { name: '路线' }).click();
-  await expect(page.getByRole('heading', { name: '地点安排' })).toBeVisible();
+  await expect(page.getByLabel('我的安排').first()).toBeVisible();
   await page.screenshot({ path: 'output/playwright/mobile-redesign-route.png' });
 
   const unexpectedErrors = errors.filter((message) =>

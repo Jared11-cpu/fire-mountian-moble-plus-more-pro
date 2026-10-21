@@ -3,7 +3,7 @@ import { cities, dashboardData } from '../data/mockData';
 
 export function DashboardPage() {
   return (
-    <main className="section-pad py-10">
+    <main className="dashboard-page section-pad py-10">
       <div className="mx-auto max-w-7xl">
         <div className="mb-8">
           <p className="text-sm font-black uppercase tracking-[0.2em] text-river">Tourism Data OS</p>
@@ -12,7 +12,7 @@ export function DashboardPage() {
           <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-tower/25 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower" role="note">演示数据：以下数字均为内置模拟数据，不代表真实客流或用户统计。</p>
         </div>
 
-        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="dash-overview mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {dashboardData.overview.map((item) => {
             const Icon = item.icon;
             return (
@@ -108,7 +108,7 @@ export function DashboardPage() {
           </section>
         </div>
 
-        <section className="relative mt-6 overflow-hidden rounded-[1.75rem] bg-ink p-6 text-white shadow-soft">
+        <section className="dash-cloud relative mt-6 overflow-hidden rounded-[1.75rem] bg-ink p-6 text-white shadow-soft">
           <img src={cities[2].imageUrl} alt="恩施峡谷风景" className="absolute inset-0 h-full w-full object-cover opacity-40" />
           <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/70 to-river/50" />
           <div className="relative">

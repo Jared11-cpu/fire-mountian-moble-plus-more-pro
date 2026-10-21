@@ -112,6 +112,55 @@ const tabs: Array<{
   { id: "food", label: "美食", icon: Utensils },
   { id: "budget", label: "预算", icon: CircleDollarSign },
 ];
+// 手机端把 7 个模块归并为 4 组，组内再用小分段切换，内容本身不变。
+type MobileGroup = "overview" | "trip" | "transport" | "spend";
+const mobileGroups: Array<{
+  id: MobileGroup;
+  label: string;
+  icon: typeof MapPin;
+  members: Array<{ tab: Tab; label: string }>;
+}> = [
+  {
+    id: "overview",
+    label: "概览",
+    icon: Sparkles,
+    members: [
+      { tab: "overview", label: "方案" },
+      { tab: "weather", label: "天气" },
+    ],
+  },
+  {
+    id: "trip",
+    label: "行程",
+    icon: CalendarDays,
+    members: [
+      { tab: "stops", label: "路线" },
+      { tab: "days", label: "每日记录" },
+    ],
+  },
+  {
+    id: "transport",
+    label: "交通",
+    icon: Bus,
+    members: [{ tab: "transport", label: "交通" }],
+  },
+  {
+    id: "spend",
+    label: "吃&花费",
+    icon: CircleDollarSign,
+    members: [
+      { tab: "food", label: "美食" },
+      { tab: "budget", label: "预算" },
+    ],
+  },
+];
+export function mobileGroupOf(tab: Tab) {
+  return (
+    mobileGroups.find((group) =>
+      group.members.some((member) => member.tab === tab),
+    ) ?? mobileGroups[0]
+  );
+}
 const mobileSheetHeights: Record<MobileSheetStop, number> = {
   peek: 72,
   half: 45,
@@ -127,6 +176,21 @@ export function getMobileSheetSnap(mapHeightPercent: number): MobileSheetStop {
       ? candidate
       : closest,
   )[0];
+}
+
+function useCompactLayout() {
+  const query = "(max-width: 640px)";
+  const [compact, setCompact] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.(query).matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return;
+    const update = () => setCompact(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return Boolean(compact);
 }
 
 export function MapWorkspace({
@@ -250,6 +314,17 @@ export function MapWorkspace({
     };
   }, [loadTransport]);
   const activeTabIndex = tabs.findIndex((item) => item.id === tab);
+  const activeGroup = mobileGroupOf(tab);
+  const sheetSummary = [
+    `${route.points.length} 站`,
+    roadMetrics?.distanceKm ? `${roadMetrics.distanceKm.toFixed(1)} 公里` : "",
+    roadMetrics?.durationMinutes
+      ? `路上约 ${Math.round(roadMetrics.durationMinutes)} 分钟`
+      : "",
+    `预算 ¥${request.budget}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const snapMobileSheet = useCallback((stop: MobileSheetStop) => {
     setMobileSheetStop(stop);
     setMobileMapHeight(mobileSheetHeights[stop]);
@@ -293,7 +368,12 @@ export function MapWorkspace({
       68,
       Math.max(18, drag.startHeight + deltaPercent),
     );
-    setMobileMapHeight(drag.currentHeight);
+    // 拖动时直接改行高，不触发整个工作区重新渲染，也不改会被子元素继承的 CSS 变量；松手后再吸附。
+    const grid = mobileWorkspaceRef.current;
+    if (grid) {
+      grid.classList.add("is-dragging");
+      grid.style.gridTemplateRows = `${drag.currentHeight}% minmax(0, 1fr)`;
+    }
   };
   const handleSheetPointerEnd = (
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -302,7 +382,13 @@ export function MapWorkspace({
     const drag = mobileDragRef.current;
     ignoreNextSheetClickRef.current = drag.moved;
     mobileDragRef.current = null;
-    snapMobileSheet(getMobileSheetSnap(drag.currentHeight));
+    const stop = getMobileSheetSnap(drag.currentHeight);
+    const grid = mobileWorkspaceRef.current;
+    if (grid) {
+      grid.classList.remove("is-dragging");
+      grid.style.gridTemplateRows = "";
+    }
+    snapMobileSheet(stop);
   };
   const cycleMobileSheet = () => {
     if (ignoreNextSheetClickRef.current) {
@@ -348,26 +434,6 @@ export function MapWorkspace({
 
   return (
     <section className="map-workspace overflow-hidden rounded-[2rem] border border-ink/10 bg-white shadow-soft">
-      <div
-        className="mobile-module-bar lg:hidden"
-        role="tablist"
-        aria-label="行程功能模块"
-      >
-        {tabs.map(({ id, label, mobileLabel, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            aria-label={label}
-            onClick={() => openMobileTab(id)}
-            className={tab === id ? "is-active" : ""}
-          >
-            <Icon aria-hidden="true" />
-            <span>{mobileLabel ?? label}</span>
-          </button>
-        ))}
-      </div>
       <div
         ref={mobileWorkspaceRef}
         className="mobile-workspace-grid lg:grid lg:h-[calc(100vh-210px)] lg:min-h-[700px] lg:grid-cols-[72px_minmax(0,1fr)_420px]"
@@ -438,7 +504,7 @@ export function MapWorkspace({
             <button
               type="button"
               className="mobile-sheet-grabber"
-              aria-label={`${mobileSheetStop === "full" ? "收起" : "展开"}${tabs[activeTabIndex]?.label ?? "行程"}详情`}
+              aria-label={`${mobileSheetStop === "full" ? "收起" : "展开"}${activeGroup.label}详情`}
               onClick={cycleMobileSheet}
               onPointerDown={handleSheetPointerDown}
               onPointerMove={handleSheetPointerMove}
@@ -447,14 +513,8 @@ export function MapWorkspace({
             >
               <span aria-hidden="true" className="mobile-sheet-grip" />
               <span>
-                <strong>{tabs[activeTabIndex]?.label}</strong>
-                <small>
-                  {mobileSheetStop === "peek"
-                    ? "上滑查看详细信息"
-                    : mobileSheetStop === "half"
-                      ? "继续上滑展开全部"
-                      : "下滑返回地图"}
-                </small>
+                <strong>{route.title}</strong>
+                <small>{sheetSummary}</small>
               </span>
               {mobileSheetStop === "full" ? (
                 <ChevronDown aria-hidden="true" />
@@ -463,6 +523,46 @@ export function MapWorkspace({
               )}
             </button>
           </div>
+          <div
+            className="mobile-module-bar lg:hidden"
+            role="tablist"
+            aria-label="行程功能模块"
+          >
+            {mobileGroups.map(({ id, label, icon: Icon, members }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={activeGroup.id === id}
+                aria-label={label}
+                onClick={() => openMobileTab(members[0].tab)}
+                className={activeGroup.id === id ? "is-active" : ""}
+              >
+                <Icon aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          {activeGroup.members.length > 1 && (
+            <div
+              className="mobile-subtab-bar lg:hidden"
+              role="tablist"
+              aria-label={`${activeGroup.label}分类`}
+            >
+              {activeGroup.members.map((member) => (
+                <button
+                  key={member.tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === member.tab}
+                  onClick={() => setTab(member.tab)}
+                  className={tab === member.tab ? "is-active" : ""}
+                >
+                  {member.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mobile-detail-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 [scrollbar-gutter:stable]">
             {tab === "overview" && (
               <Overview
@@ -562,6 +662,8 @@ export function MapWorkspace({
 }
 
 function TrustNotesPanel({ notes }: { notes: TrustNotes }) {
+  // 手机上默认折叠成一行，电脑上保持展开。
+  const compact = useCompactLayout();
   const schedule = notes.schedule;
   const groups: Array<{ title: string; items: string[] }> = [
     { title: "已知费用", items: notes.costs?.known ?? [] },
@@ -572,11 +674,17 @@ function TrustNotesPanel({ notes }: { notes: TrustNotes }) {
   ].filter((group) => group.items.length > 0);
   if (!schedule && groups.length === 0) return null;
   return (
-    <section
+    <details
       aria-label="数据来源与可信度"
-      className="rounded-2xl border border-ink/10 bg-white p-4 text-sm shadow-sm"
+      className="ws-trust group rounded-2xl border border-ink/10 bg-white p-4 text-sm shadow-sm"
+      open={!compact}
     >
-      <h4 className="font-black text-ink">数据来源与可信度</h4>
+      <summary className="cursor-pointer list-none font-black text-ink">
+        数据来源与可信度
+        <span className="ml-1 text-xs text-ink/40 group-open:hidden">
+          · 点开查看
+        </span>
+      </summary>
       {schedule && (
         <div
           className={`mt-3 rounded-xl p-3 ${schedule.status === "infeasible" ? "bg-red-50 text-red-700" : "bg-river/5 text-ink/70"}`}
@@ -607,7 +715,7 @@ function TrustNotesPanel({ notes }: { notes: TrustNotes }) {
           </ul>
         </div>
       ))}
-    </section>
+    </details>
   );
 }
 
@@ -646,7 +754,7 @@ function Overview({
   const startDateIsPast = plan.requestSnapshot.startDate < todayIso();
   return (
     <div className="space-y-4">
-      <section className="workspace-dark-glass rounded-[1.65rem] p-5 text-white">
+      <section className="ws-hero workspace-dark-glass rounded-[1.65rem] p-5 text-white">
         <div className="text-[10px] font-black uppercase tracking-[0.2em] text-jade">
           已保存方案 · 自动同步
         </div>
@@ -657,7 +765,7 @@ function Overview({
       </section>
       {plan.trustNotes && <TrustNotesPanel notes={plan.trustNotes} />}
       <div>
-        <h4 className="font-display text-2xl font-black">路线总览</h4>
+        <h4 className="ws-section-title font-display text-2xl font-black">路线总览</h4>
         <p className="mt-1 text-xs font-bold text-ink/45">
           点击卡片中的数字或日期即可直接修改
         </p>
@@ -741,7 +849,7 @@ function Overview({
           tone="river"
           readOnly
         />
-        <p className="col-span-2 rounded-xl border border-river/10 bg-river/[0.045] px-3 py-2 text-[10px] font-bold leading-5 text-river">
+        <p className="ws-mobile-hide col-span-2 rounded-xl border border-river/10 bg-river/[0.045] px-3 py-2 text-[10px] font-bold leading-5 text-river">
           AI 后端按每天的点位、停留与交通耗时分析；前端再次执行 07:30—21:30
           安全边界校验，异常结果自动回退。
         </p>
@@ -837,7 +945,7 @@ function Stops({
   }, [coverQueryKey]);
   return (
     <div className="space-y-4">
-      <h4 className="font-display text-2xl font-black">地点安排</h4>
+      <h4 className="ws-section-title font-display text-2xl font-black">地点安排</h4>
       {points.map((point, index) => {
         const expanded = expandedId === point.id;
         const date = dailyRecords.find(
@@ -1552,7 +1660,7 @@ function Days({
 
   return (
     <div className="space-y-5">
-      <h4 className="font-display text-3xl font-black">每日记录</h4>
+      <h4 className="ws-section-title font-display text-3xl font-black">每日记录</h4>
       {plan.dailyRecords.map((record) => {
         const points = plan.route.points.filter(
           (point) => (point.day ?? 1) === record.day,
@@ -2149,7 +2257,7 @@ function Weather({
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h4 className="font-display text-2xl font-black">出行天气</h4>
+          <h4 className="ws-section-title font-display text-2xl font-black">出行天气</h4>
           <p className="mt-1 text-xs font-bold leading-5 text-ink/45">
             把天气数据翻译成今天真正需要的出行准备。
           </p>
@@ -2758,7 +2866,7 @@ function Transport({
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h4 className="font-display text-2xl font-black">交通方案</h4>
+          <h4 className="ws-section-title font-display text-2xl font-black">交通方案</h4>
           <p className="mt-1 text-xs font-bold text-ink/45">
             高德路线 · 千问推荐
           </p>
@@ -3831,7 +3939,7 @@ function Food({
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h4 className="font-display text-2xl font-black">路线附近吃什么</h4>
+          <h4 className="ws-section-title font-display text-2xl font-black">路线附近吃什么</h4>
           <p className="mt-1 text-[11px] font-bold text-ink/45">
             逐站搜索 1.5 km 内真实餐饮 · 高德动态更新
           </p>
@@ -4036,14 +4144,14 @@ function Budget({
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="font-display text-2xl font-black">旅行预算</h4>
+        <h4 className="ws-section-title font-display text-2xl font-black">旅行预算</h4>
         <p className="mt-1 text-xs font-bold text-ink/45">
           计划预算在概览修改；这里只记录实际支出。
         </p>
       </div>
       <section
         aria-label={`实际花费占计划预算 ${usage.percent}%`}
-        className="relative overflow-hidden rounded-[1.9rem] bg-[#153943] p-5 text-white shadow-[0_22px_54px_rgba(18,34,42,.22)]"
+        className="ws-budget-hero relative overflow-hidden rounded-[1.9rem] bg-[#153943] p-5 text-white shadow-[0_22px_54px_rgba(18,34,42,.22)]"
       >
         <div
           aria-hidden="true"

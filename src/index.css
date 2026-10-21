@@ -611,16 +611,16 @@ body {
   .section-pad { padding-left: 1rem; padding-right: 1rem; }
   body { overflow-x: hidden; }
 
-  body:has(.planner-result-page) {
+  body.is-planner-result {
     overflow: hidden;
     background: #dcebe5;
   }
 
-  body:has(.planner-result-page) .immersive-header {
+  body.is-planner-result .immersive-header {
     display: none;
   }
 
-  body:has(.planner-result-page) .app-toast-region {
+  body.is-planner-result .app-toast-region {
     top: 10.5rem;
   }
 

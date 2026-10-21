@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import { TripProvider } from './state/tripStore';
 import './index.css';
+import './mobile.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

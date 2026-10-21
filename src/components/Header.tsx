@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Menu, X } from 'lucide-react';
+import { BookOpen, ChevronDown, Compass, Home, LayoutGrid, Sparkles } from 'lucide-react';
 import type { moreNavItems, navItems } from '../data/mockData';
-import { cityNumber } from '../data/cityShowcaseData';
-import { useTrip } from '../state/tripStore';
 import { Logo } from './Logo';
 
 type PrimaryPageId = (typeof navItems)[number]['id'];
@@ -18,22 +16,24 @@ type HeaderProps = {
 };
 
 export function Header({ page, nav, moreNav, onNavigate, onStartPlanning }: HeaderProps) {
-  const { request } = useTrip();
   const [overShowcase, setOverShowcase] = useState(page === 'home');
   const [moreOpen, setMoreOpen] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const dark = overShowcase;
   const moreActive = moreNav.some((item) => item.id === page);
 
   useEffect(() => {
     setMoreOpen(false);
-    setMobileOpen(false);
+    setMobileMoreOpen(false);
+    // 只有首页有城市轮播；其他页面不必监听整页 DOM 变化。
+    if (page !== 'home') { setOverShowcase(false); return; }
     let observedShowcase: HTMLElement | null = null;
     const observer = new IntersectionObserver(([entry]) => setOverShowcase(entry.isIntersecting && entry.boundingClientRect.bottom > 120), { threshold: [0, 0.08] });
     const attach = () => {
       const showcase = document.querySelector<HTMLElement>('[data-city-showcase]');
-      if (showcase === observedShowcase) return;
+      // 从首页切到其他页时两者都为 null，也要把顶栏切回浅色。
+      if (showcase === observedShowcase) { if (!showcase) setOverShowcase(false); return; }
       if (observedShowcase) observer.unobserve(observedShowcase);
       observedShowcase = showcase;
       if (showcase) observer.observe(showcase);
@@ -47,15 +47,22 @@ export function Header({ page, nav, moreNav, onNavigate, onStartPlanning }: Head
 
   useEffect(() => {
     const close = (event: MouseEvent) => { if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMoreOpen(false); setMobileOpen(false); } };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMoreOpen(false); setMobileMoreOpen(false); } };
     document.addEventListener('mousedown', close);
     window.addEventListener('keydown', escape);
     return () => { document.removeEventListener('mousedown', close); window.removeEventListener('keydown', escape); };
   }, []);
 
-  const navigate = (next: HeaderPageId) => { setMoreOpen(false); setMobileOpen(false); onNavigate(next); };
+  const navigate = (next: HeaderPageId) => { setMoreOpen(false); setMobileMoreOpen(false); onNavigate(next); };
+  const currentLabel = [...nav, ...moreNav].find((item) => item.id === page)?.label;
+  const mobileTabs: Array<{ id: HeaderPageId; label: string; icon: typeof Home }> = [
+    { id: 'home', label: '首页', icon: Home },
+    { id: 'planner', label: '规划', icon: Sparkles },
+    { id: 'journal', label: '手账', icon: BookOpen },
+  ];
 
   return (
+    <>
     <header className={`immersive-header ${dark ? 'is-over-showcase' : 'is-scrolled'}`}>
       <nav aria-label="主导航" className="immersive-nav">
         <button type="button" onClick={() => navigate('home')} aria-label="返回首页" className="immersive-logo"><span className="hidden sm:block"><Logo tone={dark ? 'light' : 'dark'} /></span><span className="sm:hidden"><Logo compact tone={dark ? 'light' : 'dark'} /></span></button>
@@ -68,12 +75,15 @@ export function Header({ page, nav, moreNav, onNavigate, onStartPlanning }: Head
           </div>
         </div>
 
-        <div className="immersive-mobile-city" aria-label={`当前城市编号 ${cityNumber(request.destinationCity)}`}><span>{cityNumber(request.destinationCity)}</span><i>/ 06</i></div>
+        {page !== 'home' && currentLabel && <span className="immersive-mobile-title" aria-hidden="true">{currentLabel}</span>}
         <button type="button" className="immersive-start" onClick={onStartPlanning}>开始规划</button>
-        <button type="button" className="immersive-mobile-toggle" aria-label={mobileOpen ? '关闭导航菜单' : '打开导航菜单'} aria-expanded={mobileOpen} onClick={() => setMobileOpen((value) => !value)}>{mobileOpen ? <X /> : <Menu />}</button>
-
-        {mobileOpen && <div className="immersive-mobile-menu">{[...nav, ...moreNav].map((item) => <button type="button" key={item.id} onClick={() => navigate(item.id)} aria-current={page === item.id ? 'page' : undefined}>{item.label}</button>)}<button type="button" className="is-start" onClick={() => { setMobileOpen(false); onStartPlanning(); }}>开始规划</button></div>}
       </nav>
     </header>
+    <nav aria-label="手机底部导航" className="mobile-tabbar">
+      {mobileTabs.map(({ id, label, icon: Icon }) => <button type="button" key={id} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon aria-hidden="true" /><span>{label}</span></button>)}
+      <button type="button" aria-current={moreActive ? 'page' : undefined} aria-expanded={mobileMoreOpen} aria-haspopup="menu" onClick={() => setMobileMoreOpen((value) => !value)}><LayoutGrid aria-hidden="true" /><span>更多</span></button>
+      {mobileMoreOpen && <div role="menu" className="mobile-tabbar-more">{moreNav.map((item) => <button type="button" role="menuitem" key={item.id} aria-current={page === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Compass aria-hidden="true" /><span>{item.label}</span></button>)}</div>}
+    </nav>
+    </>
   );
 }

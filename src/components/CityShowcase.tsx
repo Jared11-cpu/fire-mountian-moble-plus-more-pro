@@ -35,6 +35,7 @@ export function CityShowcase({ city, interests, onCityChange, onInterestAdd, onS
   const autoplayRemaining = useRef(AUTOPLAY_MS);
   const autoplayStartedAt = useRef(0);
   const hasVisitedWuhan = useRef(false);
+  const touchStartX = useRef<number | null>(null);
 
   const chooseIndex = useCallback((nextIndex: number, nextDirection?: 1 | -1) => {
     const normalized = (nextIndex + cityShowcaseItems.length) % cityShowcaseItems.length;
@@ -132,7 +133,16 @@ export function CityShowcase({ city, interests, onCityChange, onInterestAdd, onS
   const numberStyle = useMemo(() => ({ '--city-direction': direction } as CSSProperties), [direction]);
 
   return (
-    <section className={`city-showcase ${effectivelyPaused ? 'is-media-paused' : ''}`} aria-roledescription="carousel" aria-label="湖北六城视觉轮播" data-city-showcase>
+    <section className={`city-showcase ${effectivelyPaused ? 'is-media-paused' : ''}`} aria-roledescription="carousel" aria-label="湖北六城视觉轮播" data-city-showcase
+      // 手机上左右滑动切换城市
+      onTouchStart={(event) => { touchStartX.current = event.touches[0]?.clientX ?? null; }}
+      onTouchEnd={(event) => {
+        const start = touchStartX.current;
+        touchStartX.current = null;
+        const end = event.changedTouches[0]?.clientX;
+        if (start === null || end === undefined || Math.abs(end - start) < 50) return;
+        if (end < start) goNext(); else goPrevious();
+      }}>
       <div className="city-showcase-media" aria-hidden="true">
         {previous && <CityImage key={`previous-${previous.city}`} item={previous} priority="low" exiting />}
         <CityImage key={`active-${active.city}-${active.mediaId ?? 'default'}-${transitionKey}`} item={active} priority="high" />

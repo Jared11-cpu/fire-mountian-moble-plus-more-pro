@@ -1,4 +1,5 @@
-import { ArrowRight, CheckCircle2, Database, ExternalLink, Map, ShieldCheck, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, CheckCircle2, ChevronDown, Database, ExternalLink, Map, ShieldCheck, Sparkles } from 'lucide-react';
 
 const coverage = [
   ['武汉', '景点、路线点、餐饮、天气'], ['宜昌', '景点、路线点、餐饮、天气'], ['恩施', '景点、跨区交通覆写、餐饮、天气'],
@@ -6,10 +7,10 @@ const coverage = [
 ];
 
 export function PitchPage() {
-  return <main className="section-pad py-10"><div className="mx-auto max-w-7xl space-y-10">
-    <section className="river-line overflow-hidden rounded-[2.5rem] bg-ink p-7 text-white shadow-soft md:p-12"><p className="text-xs font-black uppercase tracking-[.22em] text-jade">VERIFIABLE PRODUCT BRIEF</p><h1 className="mt-4 max-w-4xl font-display text-4xl font-black md:text-6xl">楚游智导 AI：能力与数据来源可核验</h1><p className="mt-5 max-w-3xl text-base font-semibold leading-8 text-white/65">当前产品已接入通义千问与高德 Web 服务：千问负责用户需求提取、推荐排序和分析说明，高德提供真实地点、道路及动态公交/地铁查询。本地手账仍保存在用户设备；车辆 GPS 需获得运营方授权后才能接入。</p></section>
+  return <main className="pitch-page section-pad py-10"><div className="mx-auto max-w-7xl space-y-10">
+    <section className="pitch-hero river-line overflow-hidden rounded-[2.5rem] bg-ink p-7 text-white shadow-soft md:p-12"><p className="text-xs font-black uppercase tracking-[.22em] text-jade">VERIFIABLE PRODUCT BRIEF</p><h1 className="mt-4 max-w-4xl font-display text-4xl font-black md:text-6xl">楚游智导 AI：能力与数据来源可核验</h1><p className="mt-5 max-w-3xl text-base font-semibold leading-8 text-white/65">当前产品已接入通义千问与高德 Web 服务：千问负责用户需求提取、推荐排序和分析说明，高德提供真实地点、道路及动态公交/地铁查询。本地手账仍保存在用户设备；车辆 GPS 需获得运营方授权后才能接入。</p></section>
 
-    <Section eyebrow="SYSTEM ARCHITECTURE" title="系统架构图">
+    <Section eyebrow="SYSTEM ARCHITECTURE" title="系统架构图" defaultOpen>
       <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center"><Arch icon={Sparkles} title="统一输入" text="自然语言、城市卡片、表单、日期和定位统一进入旅行请求" /><ArrowRight className="mx-auto hidden text-river md:block" /><Arch icon={Database} title="AI 与事实服务" text="千问提取与排序；高德返回地点、道路和动态公共交通事实" /><ArrowRight className="mx-auto hidden text-river md:block" /><Arch icon={Map} title="可恢复输出" text="可编辑方案、本地手账、照片、分享链接与高德路线协同展示" /></div>
     </Section>
 
@@ -52,7 +53,11 @@ export function PitchPage() {
   </div></main>;
 }
 
-function Section({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) { return <section className="rounded-[2rem] bg-mist/45 p-5 md:p-7"><p className="text-[10px] font-black uppercase tracking-[.22em] text-river">{eyebrow}</p><h2 className="mt-2 mb-5 font-display text-3xl font-black">{title}</h2>{children}</section>; }
+// 手机上除第一节外默认折叠，电脑上始终展开。
+function Section({ eyebrow, title, defaultOpen = false, children }: { eyebrow: string; title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return <section className={`m-collapse rounded-[2rem] bg-mist/45 p-5 md:p-7 ${open ? 'is-open' : ''}`}><p className="pitch-eyebrow text-[10px] font-black uppercase tracking-[.22em] text-river">{eyebrow}</p><button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="m-collapse-head mt-2 mb-5 flex w-full items-center gap-3 text-left"><h2 className="font-display text-3xl font-black">{title}</h2><ChevronDown aria-hidden="true" className="m-collapse-chevron ml-auto h-5 w-5 text-ink/40" /></button><div className="m-collapse-body">{children}</div></section>;
+}
 function Arch({ icon: Icon, title, text }: { icon: typeof Sparkles; title: string; text: string }) { return <div className="rounded-3xl bg-white p-5 shadow-sm"><Icon className="h-6 w-6 text-river" /><h3 className="mt-3 font-display text-xl font-black">{title}</h3><p className="mt-2 text-sm font-semibold leading-6 text-ink/55">{text}</p></div>; }
 function Source({ name, href, note }: { name: string; href: string; note: string }) { return <a href={href} target="_blank" rel="noreferrer" className="mb-3 flex items-start justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm"><div><div className="font-black">{name}</div><p className="mt-1 text-xs font-semibold leading-5 text-ink/50">{note}</p></div><ExternalLink className="h-4 w-4 shrink-0 text-river" /></a>; }
 function Compare({ name, href, strength, difference }: { name: string; href: string; strength: string; difference: string }) { return <article className="rounded-3xl bg-white p-5 shadow-sm"><a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-display text-xl font-black text-river">{name}<ExternalLink className="h-4 w-4" /></a><p className="mt-3 text-xs font-black text-ink/45">公开优势</p><p className="mt-1 text-sm font-semibold text-ink/65">{strength}</p><p className="mt-3 text-xs font-black text-ink/45">本项目定位</p><p className="mt-1 text-sm font-semibold leading-6 text-ink/65">{difference}</p></article>; }

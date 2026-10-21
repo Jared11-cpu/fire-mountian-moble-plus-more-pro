@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BedDouble, Bot, ClipboardList, Loader2, MessageSquareReply, Sparkles, Video } from 'lucide-react';
+import { BedDouble, Bot, ChevronDown, ClipboardList, Loader2, MessageSquareReply, Sparkles, Video } from 'lucide-react';
 import { cities } from '../data/mockData';
 import { CITY_NAMES } from '../domain/trip';
 import { requestBusinessPlan, type AiBusinessPlan } from '../services/businessApi';
@@ -54,23 +54,23 @@ export function BusinessPage() {
   };
 
   return (
-    <main className="section-pad py-10">
+    <main className="business-page section-pad py-10">
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.2em] text-river">Business Console</p>
+            <p className="biz-eyebrow text-sm font-black uppercase tracking-[0.2em] text-river">Business Console</p>
             <h1 className="mt-2 font-display text-4xl font-black text-ink md:text-5xl">民宿/景区 AI 商家后台</h1>
-            <p className="mt-4 max-w-2xl text-ink/65">路线、欢迎语、提醒、脚本和客服话术一键生成。</p>
+            <p className="biz-intro mt-4 max-w-2xl text-ink/65">路线、欢迎语、提醒、脚本和客服话术一键生成。</p>
             {source === 'ai'
               ? <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-river/20 bg-river/[0.06] px-3 py-2 text-xs font-bold leading-5 text-river" role="note">周边景点与餐厅已由高德核实，文案由千问生成；价格与营业时间以商家公告为准。{unmatchedSpots.length > 0 && ` 未找到：${unmatchedSpots.join('、')}。`}{factCheck && !factCheck.restaurantsVerified && ' 周边餐厅未查询到，美食栏未列具体店名。'}{factCheck && factCheck.removedCount > 0 && ` 已移除 ${factCheck.removedCount} 条无法核实的内容（${factCheck.reasons[0]}${factCheck.removedCount > 1 ? ' 等' : ''}）。`}</p>
-              : <p className="mt-3 inline-flex max-w-2xl rounded-xl border border-tower/25 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower" role="note">当前内容由本地规则模板生成，仅作示例；点击“生成住客服务方案”获取基于真实周边地点的 AI 方案。</p>}
+              : <p className="biz-rules-note mt-3 inline-flex max-w-2xl rounded-xl border border-tower/25 bg-tower/[0.06] px-3 py-2 text-xs font-bold leading-5 text-tower" role="note">当前内容由本地规则模板生成，仅作示例；点击“生成住客服务方案”获取基于真实周边地点的 AI 方案。</p>}
           </div>
-          <div className="rounded-full bg-ink px-5 py-3 text-sm font-bold text-white shadow-soft">{toast}</div>
+          <div className="biz-toast rounded-full bg-ink px-5 py-3 text-sm font-bold text-white shadow-soft">{toast}</div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
-          <section className="glass rounded-[1.75rem] p-6 shadow-soft">
-            <div className="mb-5 flex items-center gap-3">
+          <section className="biz-form glass rounded-[1.75rem] p-6 shadow-soft">
+            <div className="biz-form-head mb-5 flex items-center gap-3">
               <div className="grid h-12 w-12 place-items-center rounded-2xl bg-river/10 text-river">
                 <BedDouble className="h-6 w-6" />
               </div>
@@ -104,7 +104,7 @@ export function BusinessPage() {
               />
             </Field>
             <Field label="目标客户">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="biz-targets grid grid-cols-3 gap-2">
                 {['情侣', '家庭', '学生', '亲子', '老人'].map((target) => (
                   <button
                     key={target}
@@ -129,7 +129,7 @@ export function BusinessPage() {
           </section>
 
           <section className="grid gap-5 xl:grid-cols-2">
-            <div className="relative min-h-[230px] overflow-hidden rounded-[1.5rem] bg-ink text-white shadow-soft xl:col-span-2">
+            <div className="biz-hero relative min-h-[230px] overflow-hidden rounded-[1.5rem] bg-ink text-white shadow-soft xl:col-span-2">
               <img src={cities[0].imageUrl} alt="宜昌江景" className="absolute inset-0 h-full w-full object-cover opacity-75" />
               <div className="absolute inset-0 bg-gradient-to-t from-ink/95 via-ink/35 to-transparent" />
               <div className="absolute bottom-0 left-0 right-0 p-6">
@@ -138,21 +138,13 @@ export function BusinessPage() {
                 <p className="mt-2 text-white/72">把周边资源变成可售卖、可传播的住客服务。</p>
               </div>
             </div>
-            <Panel icon={ClipboardList} title="周边一日游路线" items={plan.route} />
-            <div className="glass rounded-[1.5rem] p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-3">
-                <Bot className="h-6 w-6 text-river" />
-                <h3 className="font-display text-2xl font-black text-ink">民宿欢迎语</h3>
-              </div>
+            <Panel icon={ClipboardList} title="周边一日游路线" items={plan.route} defaultOpen />
+            <Block icon={Bot} title="民宿欢迎语">
               <p className="line-clamp-4 rounded-2xl bg-white/70 p-4 font-semibold leading-8 text-ink/70">{plan.welcome}</p>
-            </div>
+            </Block>
             <Panel icon={MessageSquareReply} title="客人入住提醒" items={plan.reminders} />
             <Panel icon={ClipboardList} title="周边美食推荐" items={plan.food} />
-            <div className="glass rounded-[1.5rem] p-5 shadow-sm xl:col-span-2">
-              <div className="mb-4 flex items-center gap-3">
-                <Video className="h-6 w-6 text-tower" />
-                <h3 className="font-display text-2xl font-black text-ink">宣传内容生成</h3>
-              </div>
+            <Block icon={Video} iconClassName="text-tower" title="宣传内容生成" className="xl:col-span-2">
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl bg-white/70 p-4">
                   <div className="mb-2 text-sm font-black text-river">民宿短视频宣传脚本</div>
@@ -173,7 +165,7 @@ export function BusinessPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </Block>
           </section>
         </div>
       </div>
@@ -190,13 +182,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Panel({ icon: Icon, title, items }: { icon: typeof ClipboardList; title: string; items: string[] }) {
+// 手机上每块结果默认折叠成一行标题，点开再看；电脑上始终展开。
+function Block({ icon: Icon, iconClassName = 'text-river', title, defaultOpen = false, className = '', children }: { icon: typeof ClipboardList; iconClassName?: string; title: string; defaultOpen?: boolean; className?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="glass rounded-[1.5rem] p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-3">
-        <Icon className="h-6 w-6 text-river" />
+    <div className={`m-collapse glass rounded-[1.5rem] p-5 shadow-sm ${open ? 'is-open' : ''} ${className}`}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="m-collapse-head mb-4 flex w-full items-center gap-3 text-left">
+        <Icon className={`h-6 w-6 ${iconClassName}`} />
         <h3 className="font-display text-2xl font-black text-ink">{title}</h3>
-      </div>
+        <ChevronDown aria-hidden="true" className="m-collapse-chevron ml-auto h-5 w-5 text-ink/40" />
+      </button>
+      <div className="m-collapse-body">{children}</div>
+    </div>
+  );
+}
+
+function Panel({ icon, title, items, defaultOpen }: { icon: typeof ClipboardList; title: string; items: string[]; defaultOpen?: boolean }) {
+  return (
+    <Block icon={icon} title={title} defaultOpen={defaultOpen}>
       <div className="space-y-2">
         {items.map((item) => (
           <div key={item} className="line-clamp-2 rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold leading-6 text-ink/68">
@@ -204,6 +207,6 @@ function Panel({ icon: Icon, title, items }: { icon: typeof ClipboardList; title
           </div>
         ))}
       </div>
-    </div>
+    </Block>
   );
 }
