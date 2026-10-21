@@ -387,7 +387,8 @@ body {
 .workspace-detail-glass section:not(.workspace-dark-glass) {
   border-color: rgba(255,255,255,.72) !important;
   box-shadow: 0 12px 30px rgba(18,34,42,.07), inset 0 1px 0 rgba(255,255,255,.72);
-  backdrop-filter: blur(14px) saturate(1.12);
+  /* 详情面板里每张卡片原来都带 backdrop-filter，嵌套在同样带模糊的滚动容器里，滚动时每帧都要重算几十层模糊。
+     卡片底色本来就几乎不透明、背后只是平整渐变，去掉模糊看不出差别，滚动明显更顺。 */
 }
 
 .workspace-detail-glass article,
@@ -401,7 +402,6 @@ body {
     radial-gradient(circle at 88% 4%, rgba(74,152,122,.24), transparent 32%),
     linear-gradient(145deg, rgba(11,28,33,.97), rgba(31,107,114,.88));
   box-shadow: 0 18px 44px rgba(21,47,53,.22), inset 0 1px 0 rgba(255,255,255,.13);
-  backdrop-filter: blur(18px) saturate(1.18);
 }
 
 .workspace-tab-track {
