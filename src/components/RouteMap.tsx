@@ -377,6 +377,13 @@ export function RouteMap({
         overlayRef.current = addRoadPolylines(AMap, map, plannedPaths);
         window.requestAnimationFrame(() => map.resize?.());
         fitMapTo(map, [...overlayRef.current, ...markerRef.current]);
+        // 首次适配时容器可能还在随布局变化，稍后按最终尺寸再适配一次。
+        window.setTimeout(() => {
+          if (!isCurrent() || mapRef.current !== map) return;
+          map.resize?.();
+          const last = lastFitRef.current;
+          if (last?.overlays.length) fitMapTo(map, last.overlays, last.focused);
+        }, 300);
         setLiveMapZoom(Number(map.getZoom?.() ?? 12));
         setMapAvailable(true);
       } catch (caught) {
@@ -680,13 +687,14 @@ export function RouteMap({
         }
       >
         <div
-          className={`relative min-w-0 overflow-hidden bg-[#d8f1ee] ${mapOnly ? "h-full min-h-[620px]" : "min-h-[430px]"}`}
+          className={`route-map-frame relative min-w-0 overflow-hidden bg-[#d8f1ee] ${mapOnly ? "h-full min-h-[620px]" : "min-h-[430px]"}`}
         >
           <div
             ref={container}
             role="application"
             aria-label="可缩放和拖动的高德交互地图"
             data-map-zoom={liveMapZoom ?? ""}
+            data-label-mode={liveMapZoom !== null && liveMapZoom < 13 ? "compact" : "full"}
             data-map-center={liveMapCenter}
             tabIndex={0}
             onKeyDown={(event) => {
@@ -1260,6 +1268,7 @@ function GaodeRasterRouteMap({
   return (
     <div
       ref={viewportRef}
+      data-label-mode={zoom < 13 ? "compact" : "full"}
       aria-label="可缩放和拖动的高德路线地图"
       role="application"
       tabIndex={0}
@@ -1417,7 +1426,7 @@ function GaodeRasterRouteMap({
           ) : (
             <div
               key={`${point.id}-name`}
-              className="absolute -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-xs font-black text-ink shadow-md"
+              className="raster-route-name absolute -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-xs font-black text-ink shadow-md"
               style={{ left: x, top: y + 25 }}
             >
               {point.name}

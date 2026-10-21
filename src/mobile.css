@@ -302,3 +302,15 @@
   .mobile-sheet-heading { background: #fffdf8 !important; }
   .mobile-detail-scroll { -webkit-overflow-scrolling: touch; }
 }
+
+/* ---------- 手机地图：路线完整可见、名字不互相压住 ---------- */
+@media (max-width: 1023px) {
+  /* 地图高度跟随抽屉，不能再撑到 620px，否则路线会被抽屉挡住一半 */
+  .mobile-map-pane .route-map-frame { min-height: 0 !important; }
+}
+@media (max-width: 640px) {
+  /* 缩小看全程时只显示编号，放大到街区级别再显示地名；地名在下方行程列表里都有 */
+  [data-label-mode="compact"] .amap-route-name,
+  [data-label-mode="compact"] .raster-route-name { display: none !important; }
+  .amap-smart-marker { width: 28px; height: 28px; font-size: .8rem; }
+}
